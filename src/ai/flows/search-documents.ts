@@ -80,7 +80,7 @@ User Query: {{{query}}}
 Document Type: {{{documentType}}}
 
 Here are the search results from the database:
-{{{JSON.stringify results}}}
+{{{results}}}
 
 
 Answer:`,
@@ -122,14 +122,18 @@ const searchDocumentsFlow = ai.defineFlow(
         };
       }
 
-      // Search the collection
-      const results = await collection.find(searchQuery).toArray();
+     // Search the collection
+const results = await collection.find(searchQuery).toArray();
 
-      // Call the prompt with the search results
-      const {output} = await searchDocumentsPrompt({
-        ...input,
-        results,
-      });
+// Serializa resultados a string JSON para el prompt
+const resultsString = JSON.stringify(results, null, 2);
+
+// Pasa la cadena serializada al prompt
+const {output} = await searchDocumentsPrompt({
+  ...input,
+  results: resultsString,
+});
+
 
       return output!;
     } finally {

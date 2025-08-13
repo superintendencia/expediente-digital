@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useState, useMemo } from 'react';
-import { useFormState, useFormStatus } from 'react-dom';
+import React, { useEffect, useState, useMemo, useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { Bot, Cog, FileText, Info, Link as LinkIcon, Loader2, Search, Send, FileArchive, BookCopy, FileBadge, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
 
@@ -184,8 +184,8 @@ function SearchResults({ results }: { results: SearchDocumentsOutput['results'] 
 export default function HomePage() {
   const [dbSettings, setDbSettings] = useState<DBSettings>({ uri: '', dbName: '' });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [initialState] = useState<SearchState>({});
-  const [state, formAction] = useFormState(handleSearch, initialState);
+  const initialState: SearchState = {};
+  const [state, formAction] = useActionState(handleSearch, initialState);
   const { toast } = useToast();
 
   useEffect(() => {
