@@ -172,10 +172,13 @@ const searchDocumentsFlow = ai.defineFlow(
       // Process results before sending them to the prompt or returning them
       const processedResults = results.map(r => {
         const result: any = { ...r, _id: r._id.toString() };
-        // Ensure all date fields are converted to strings if they exist
+        
+        // Ensure all date fields are converted to strings if they exist, otherwise remove them
         Object.keys(result).forEach(key => {
           if (result[key] instanceof Date) {
             result[key] = result[key].toISOString();
+          } else if (result[key] === null) {
+            delete result[key];
           }
         });
         return result;
