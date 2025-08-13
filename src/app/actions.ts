@@ -5,10 +5,10 @@ import { searchDocuments, SearchDocumentsOutput } from '@/ai/flows/search-docume
 import { z } from 'zod';
 
 const formSchema = z.object({
-  query: z.string().min(1, 'Query is required.'),
+  query: z.string().min(1, 'La consulta es obligatoria.'),
   documentType: z.enum(['circular', 'instruction', 'regulation']),
-  mongodbUri: z.string().min(1, 'MongoDB URI is required.'),
-  mongodbDatabaseName: z.string().min(1, 'Database name is required.'),
+  mongodbUri: z.string().min(1, 'El URI de MongoDB es obligatorio.'),
+  mongodbDatabaseName: z.string().min(1, 'El nombre de la base de datos es obligatorio.'),
 });
 
 export interface SearchState {
@@ -37,7 +37,7 @@ export async function handleSearch(
   const parsed = formSchema.safeParse(rawFormData);
 
   if (!parsed.success) {
-    return { error: 'Invalid form data.', formErrors: parsed.error.flatten().fieldErrors };
+    return { error: 'Datos de formulario inválidos.', formErrors: parsed.error.flatten().fieldErrors };
   }
 
   const { query, documentType, mongodbUri, mongodbDatabaseName } = parsed.data;
@@ -54,6 +54,6 @@ export async function handleSearch(
     return { data: result };
   } catch (e: any) {
     console.error(e);
-    return { error: e.message || 'An unexpected error occurred.' };
+    return { error: e.message || 'Ocurrió un error inesperado.' };
   }
 }
