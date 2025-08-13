@@ -147,8 +147,17 @@ const searchDocumentsFlow = ai.defineFlow(
         };
       }
 
+      // Process results before sending them to the prompt or returning them
+      const processedResults = results.map(r => {
+        const result: any = { ...r, _id: r._id.toString() };
+        if (r.fecha_expedicion && r.fecha_expedicion instanceof Date) {
+          result.fecha_expedicion = r.fecha_expedicion.toISOString();
+        }
+        return result;
+      });
+
       // Serializa resultados a string JSON para el prompt
-      const resultsString = JSON.stringify(results, null, 2);
+      const resultsString = JSON.stringify(processedResults, null, 2);
 
       // Pasa la cadena serializada al prompt
       const { output } = await searchDocumentsPrompt({
@@ -158,7 +167,7 @@ const searchDocumentsFlow = ai.defineFlow(
       });
 
       return {
-        results: results.map(r => ({ ...r, _id: r._id.toString() })),
+        results: processedResults,
         answer: output?.answer || "No pude generar una respuesta basada en los documentos proporcionados.",
       };
     } finally {
