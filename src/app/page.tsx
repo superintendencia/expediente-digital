@@ -2,8 +2,7 @@
 
 import React, { useEffect, useState, useMemo, useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { Bot, Cog, FileText, Info, Link as LinkIcon, Loader2, Search, Send, FileArchive, BookCopy, FileBadge, ArrowRight } from 'lucide-react';
-import Link from 'next/link';
+import { Bot, Cog, FileText, Info, Loader2, Search, Send, FileArchive, BookCopy, FileBadge, ArrowRight } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -187,6 +186,7 @@ export default function HomePage() {
   const initialState: SearchState = {};
   const [state, formAction] = useActionState(handleSearch, initialState);
   const { toast } = useToast();
+  const { pending } = useFormStatus();
 
   useEffect(() => {
     try {
@@ -314,14 +314,14 @@ export default function HomePage() {
                 </Card>
               </form>
 
-              {useFormStatus().pending && (
+              {pending && (
                 <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-8 text-center">
                   <Loader2 className="h-12 w-12 animate-spin text-primary" />
                   <p className="text-muted-foreground">Searching documents and generating response...</p>
                 </div>
               )}
 
-              {!useFormStatus().pending && !state.data && (
+              {!pending && !state.data && (
                 <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-8 text-center">
                   <Bot className="h-16 w-16 text-muted-foreground/50" />
                   <h3 className="text-xl font-semibold">Welcome to LexiAssist</h3>
@@ -329,7 +329,7 @@ export default function HomePage() {
                 </div>
               )}
               
-              {!useFormStatus().pending && state.data && (
+              {!pending && state.data && (
                 <Tabs defaultValue="answer" className="w-full">
                   <TabsList className="grid w-full grid-cols-2">
                     <TabsTrigger value="answer"><Bot className="mr-2 h-4 w-4" />AI Response</TabsTrigger>
