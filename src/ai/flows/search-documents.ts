@@ -57,6 +57,14 @@ export async function searchDocuments(input: SearchDocumentsInput): Promise<Sear
   return searchDocumentsFlow(input);
 }
 
+const extractKeywordsPrompt = ai.definePrompt({
+  name: 'extractKeywordsPrompt',
+  input: { schema: z.object({ query: z.string() }) },
+  output: { schema: z.object({ keywords: z.array(z.string()).describe('A list of 1 to 5 keywords extracted from the user query.') }) },
+  prompt: `Extract the most relevant keywords from the following user query. Return them as a list of strings.
+Query: {{{query}}}`,
+});
+
 // Define the prompt
 const searchDocumentsPrompt = ai.definePrompt({
   name: 'searchDocumentsPrompt',
@@ -103,6 +111,17 @@ const searchDocumentsFlow = ai.defineFlow(
     outputSchema: SearchDocumentsOutputSchema,
   },
   async input => {
+    // 1. Extract keywords from the query
+    const { output: keywordsOutput } = await extractKeywordsPrompt({ query: input.query });
+    if (!keywordsOutput || keywordsOutput.keywords.length === 0) {
+        return {
+            results: [],
+            answer: "No se pudieron extraer palabras clave de su consulta. Por favor, intente reformularla.",
+        };
+    }
+    
+    const keywords = keywordsOutput.keywords;
+    
     // Connect to MongoDB
     const client = new MongoClient(input.mongodbUri);
 
@@ -111,33 +130,36 @@ const searchDocumentsFlow = ai.defineFlow(
       const db: Db = client.db(input.mongodbDatabaseName);
       const collection = db.collection(input.mongodbCollectionName);
 
-      // Construct the search query based on the document type
-      const queryRegex = { $regex: input.query, $options: 'i' };
-      const queryIn = { $in: [new RegExp(input.query, 'i')] };
-
+      // 2. Construct a more intelligent search query
+      const queryRegexes = keywords.map(keyword => ({ $regex: keyword, $options: 'i' }));
+      const queryIn = { $in: keywords.map(keyword => new RegExp(keyword, 'i')) };
+      
       let searchQuery = {};
       const orClauses = [];
-      
+
+      const textSearchFields = ['resumen', 'titulo', 'tema'];
+      const keywordSearchFields = ['palabras_clave'];
+
       if (input.documentType === 'regulation') {
-        orClauses.push(
-          { 'articulos.palabras_clave_articulo': queryIn },
-          { 'articulos.resumen_articulo': queryRegex },
-          { titulo_seccion: queryRegex },
-        );
-      } else {
-         orClauses.push(
-            { palabras_clave: queryIn },
-            { resumen: queryRegex },
-            { titulo: queryRegex },
-        );
+        textSearchFields.push('titulo_seccion', 'articulos.resumen_articulo');
+        keywordSearchFields.push('articulos.palabras_clave_articulo');
       }
+
+      queryRegexes.forEach(regex => {
+        textSearchFields.forEach(field => {
+            orClauses.push({ [field]: regex });
+        });
+      });
+      keywordSearchFields.forEach(field => {
+        orClauses.push({ [field]: queryIn });
+      });
 
       if (orClauses.length > 0) {
         searchQuery = { $or: orClauses };
       }
 
 
-      // Search the collection
+      // 3. Search the collection
       const results = await collection.find(searchQuery).toArray();
 
       if (results.length === 0) {
@@ -150,16 +172,18 @@ const searchDocumentsFlow = ai.defineFlow(
       // Process results before sending them to the prompt or returning them
       const processedResults = results.map(r => {
         const result: any = { ...r, _id: r._id.toString() };
-        if (r.fecha_expedicion && r.fecha_expedicion instanceof Date) {
-          result.fecha_expedicion = r.fecha_expedicion.toISOString();
-        }
+        // Ensure all date fields are converted to strings if they exist
+        Object.keys(result).forEach(key => {
+          if (result[key] instanceof Date) {
+            result[key] = result[key].toISOString();
+          }
+        });
         return result;
       });
 
-      // Serializa resultados a string JSON para el prompt
+      // 4. Generate AI response based on results
       const resultsString = JSON.stringify(processedResults, null, 2);
 
-      // Pasa la cadena serializada al prompt
       const { output } = await searchDocumentsPrompt({
         query: input.query,
         documentType: input.documentType,
