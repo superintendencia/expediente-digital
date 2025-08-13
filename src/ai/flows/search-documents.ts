@@ -181,6 +181,16 @@ const searchDocumentsFlow = ai.defineFlow(
             result[key] = result[key].toISOString();
           }
         }
+        
+        if (result.articulos && Array.isArray(result.articulos)) {
+          result.articulos = result.articulos.map((articulo: any) => {
+            if (articulo.numero_articulo) {
+                articulo.numero_articulo = String(articulo.numero_articulo);
+            }
+            return articulo;
+          });
+        }
+        
         return result;
       });
 
