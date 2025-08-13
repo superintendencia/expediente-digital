@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
 import { Bot, Cog, FileText, Info, Link as LinkIcon, Loader2, Search, Send, FileArchive, BookCopy, FileBadge, ArrowRight } from 'lucide-react';
 import Link from 'next/link';
