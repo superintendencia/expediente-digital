@@ -28,7 +28,7 @@ export type SearchDocumentsInput = z.infer<typeof SearchDocumentsInputSchema>;
 const SearchDocumentsOutputSchema = z.object({
   results: z.array(
     z.object({
-      _id: z.string(),
+      _id: z.any(),
       link_acceso: z.string().optional(),
       resumen: z.string().optional(),
       titulo: z.string().optional(),
@@ -61,18 +61,27 @@ export async function searchDocuments(input: SearchDocumentsInput): Promise<Sear
 // Define the prompt
 const searchDocumentsPrompt = ai.definePrompt({
   name: 'searchDocumentsPrompt',
-  input: {schema: SearchDocumentsInputSchema},
-  output: {schema: SearchDocumentsOutputSchema},
+  input: {
+    schema: z.object({
+      query: z.string(),
+      documentType: z.string(),
+      results: z.string(),
+    }),
+  },
+  output: {
+    schema: z.object({
+      answer: z.string(),
+    }),
+  },
   prompt: `You are an AI assistant designed to search and analyze documents from a database.
 
-You will be provided with a user query, the type of document to search for (circular, instruction, or regulation), and the MongoDB connection details.
+You will be provided with a user query, the type of document to search for (circular, instruction, or regulation), and the search results from the database.
 
 Your task is to:
-1.  Connect to the MongoDB database using the provided URI, database name, and collection name.
-2.  Search the specified collection for documents that match the user query based on keywords and/or resumen fields.
-3.  Analyze the retrieved documents and provide a concise and informative answer to the user query.
-4.  Include the link_acceso in your answer if available. If documentType is regulation always return 'https://personal.justucuman.gov.ar/pdf/Reglamento%20de%20Expediente%20Digital.pdf' as link.
-5.  Do not use any external sources or hallucinate information.
+1.  Analyze the retrieved documents and provide a concise and informative answer to the user query.
+2.  If a document has a 'link_acceso', include it in your answer.
+3.  If documentType is regulation always return 'https://personal.justucuman.gov.ar/pdf/Reglamento%20de%20Expediente%20Digital.pdf' as link.
+4.  Do not use any external sources or hallucinate information.
 
 Here is the information you will use:
 
@@ -103,39 +112,46 @@ const searchDocumentsFlow = ai.defineFlow(
       const collection = db.collection(input.mongodbCollectionName);
 
       // Construct the search query based on the document type
+      const queryRegex = { $regex: input.query, $options: 'i' };
+      const queryIn = { $in: [new RegExp(input.query, 'i')] };
+
       let searchQuery = {};
 
       if (input.documentType === 'regulation') {
         searchQuery = {
           $or: [
-            { 'articulos.palabras_clave_articulo': { $in: [input.query] } },
-            { 'articulos.resumen_articulo': { $regex: input.query, $options: 'i' } },
-            { titulo_seccion: { $regex: input.query, $options: 'i' } },
+            { 'articulos.palabras_clave_articulo': queryIn },
+            { 'articulos.resumen_articulo': queryRegex },
+            { titulo_seccion: queryRegex },
           ],
         };
       } else {
         searchQuery = {
           $or: [
-            { palabras_clave: { $in: [input.query] } },
-            { resumen: { $regex: input.query, $options: 'i' } },
+            { palabras_clave: queryIn },
+            { resumen: queryRegex },
+            { titulo: queryRegex },
           ],
         };
       }
 
-     // Search the collection
-const results = await collection.find(searchQuery).toArray();
+      // Search the collection
+      const results = await collection.find(searchQuery).toArray();
 
-// Serializa resultados a string JSON para el prompt
-const resultsString = JSON.stringify(results, null, 2);
+      // Serializa resultados a string JSON para el prompt
+      const resultsString = JSON.stringify(results, null, 2);
 
-// Pasa la cadena serializada al prompt
-const {output} = await searchDocumentsPrompt({
-  ...input,
-  results: resultsString,
-});
+      // Pasa la cadena serializada al prompt
+      const { output } = await searchDocumentsPrompt({
+        query: input.query,
+        documentType: input.documentType,
+        results: resultsString,
+      });
 
-
-      return output!;
+      return {
+        results: results.map(r => ({ ...r, _id: r._id.toString() })),
+        answer: output?.answer || "I couldn't find an answer based on the provided documents.",
+      };
     } finally {
       await client.close();
     }
