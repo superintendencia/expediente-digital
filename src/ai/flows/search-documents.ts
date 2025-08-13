@@ -174,13 +174,13 @@ const searchDocumentsFlow = ai.defineFlow(
         const result: any = { ...r, _id: r._id.toString() };
         
         // Ensure all date fields are converted to strings if they exist, otherwise remove them
-        Object.keys(result).forEach(key => {
-          if (result[key] instanceof Date) {
-            result[key] = result[key].toISOString();
-          } else if (result[key] === null) {
+        for (const key in result) {
+          if (result[key] === null) {
             delete result[key];
+          } else if (result[key] instanceof Date) {
+            result[key] = result[key].toISOString();
           }
-        });
+        }
         return result;
       });
 
