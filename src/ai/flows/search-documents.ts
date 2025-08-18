@@ -88,6 +88,7 @@ const generateAnswerPrompt = ai.definePrompt({
       documentType: z.string(),
       context: z.string(),
       intent: z.enum(['search_info', 'count_items', 'unknown']),
+      resultsCount: z.number().optional(),
     }),
   },
   output: {
@@ -113,7 +114,7 @@ Based on the context, provide a comprehensive answer. Follow these rules:
     *   For each item, include its title (or number), a brief summary, and the link ('link_acceso') if available.
     *   If the context is just a number (the result of a count), formulate a natural language sentence. For example, if the query was "¿cuántos artículos tiene el reglamento?" and the context is "116", the answer should be "El **reglamento de expediente digital** tiene un total de 116 artículos."
 4.  **Provide the main regulation link.** If the 'documentType' is 'regulation', always include the link 'https://personal.justucuman.gov.ar/pdf/Reglamento%20de%20Expediente%20Digital.pdf' when relevant.
-5.  **Handle long lists.** If the context contains a very long list of documents, it is not necessary to list all of them. Instead, list the most relevant ones and add a note at the end, such as: "Se han encontrado más documentos que coinciden con su búsqueda. Puede ver la lista completa en la pestaña 'Documentos Fuente'."
+5.  **Handle long lists.** If the context contains a long list of documents and you are only showing the most relevant, YOU MUST add a note at the end of your response, such as: "Se han encontrado más documentos que coinciden con su búsqueda. Puede ver la lista completa en la pestaña 'Documentos Fuente'." The total number of documents found is {{{resultsCount}}}. Use this to decide if you need to add the warning.
 `,
 });
 
@@ -272,6 +273,7 @@ const searchDocumentsFlow = ai.defineFlow(
         documentType: finalAnswerDocumentType,
         context: context,
         intent: intent,
+        resultsCount: processedResults.length,
       });
 
       return {
