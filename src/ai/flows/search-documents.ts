@@ -10,7 +10,7 @@
  */
 
 import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import {z} from 'zod';
 import {MongoClient, Db} from 'mongodb';
 
 // Define the input schema
@@ -113,6 +113,7 @@ Based on the context, provide a comprehensive answer. Follow these rules:
     *   For each item, include its title (or number), a brief summary, and the link ('link_acceso') if available.
     *   If the context is just a number (the result of a count), formulate a natural language sentence. For example, if the query was "¿cuántos artículos tiene el reglamento?" and the context is "116", the answer should be "El **reglamento de expediente digital** tiene un total de 116 artículos."
 4.  **Provide the main regulation link.** If the 'documentType' is 'regulation', always include the link 'https://personal.justucuman.gov.ar/pdf/Reglamento%20de%20Expediente%20Digital.pdf' when relevant.
+5.  **Handle long lists.** If the context contains a very long list of documents, it is not necessary to list all of them. Instead, list the most relevant ones and add a note at the end, such as: "Se han encontrado más documentos que coinciden con su búsqueda. Puede ver la lista completa en la pestaña 'Documentos Fuente'."
 `,
 });
 
@@ -189,23 +190,40 @@ const searchDocumentsFlow = ai.defineFlow(
       
       const searchQuery = buildSearchQuery(keywords, documentType === 'regulation' || documentType === 'all');
 
-      if (intent === 'count_items' && (!keywords || keywords.length === 0)) {
-         let totalCount = 0;
-         for (const collectionName of collectionsToQuery) {
-            const collection = db.collection(collectionName);
-            if (collectionName === 'reglamentos') {
-                const aggregation = [
-                    { $unwind: "$articulos" },
-                    { $count: "total_articles" }
-                ];
-                const result = await collection.aggregate(aggregation).toArray();
-                totalCount += result.length > 0 ? result[0].total_articles : 0;
+      if (intent === 'count_items') {
+        let totalCount = 0;
+        let countedWithKeywords = false;
+        
+        for (const collectionName of collectionsToQuery) {
+          const collection = db.collection(collectionName);
+          const isRegulation = collectionName === 'reglamentos';
+          const query = buildSearchQuery(keywords, isRegulation);
+
+          if (keywords && keywords.length > 0) {
+            const collectionResults = await collection.find(query).toArray();
+            results = results.concat(collectionResults);
+            countedWithKeywords = true;
+          } else {
+            if (isRegulation) {
+              const aggregation = [
+                  { $unwind: "$articulos" },
+                  { $count: "total_articles" }
+              ];
+              const result = await collection.aggregate(aggregation).toArray();
+              totalCount += result.length > 0 ? result[0].total_articles : 0;
             } else {
-               totalCount += await collection.countDocuments(searchQuery);
+              totalCount += await collection.countDocuments(query);
             }
-         }
-         context = String(totalCount);
-      } else { // search_info or count_items with keywords
+          }
+        }
+        
+        if (countedWithKeywords) {
+          context = JSON.stringify(results, null, 2);
+        } else {
+          context = String(totalCount);
+        }
+
+      } else { // search_info
         for (const collectionName of collectionsToQuery) {
             const collection = db.collection(collectionName);
             const isRegulation = collectionName === 'reglamentos';
