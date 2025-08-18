@@ -100,102 +100,123 @@ function SettingsDialog({
 }
 
 const MemoizedAIAnswer = React.memo(function AIAnswer({ answer }: { answer: string }) {
-  const formattedAnswer = useMemo(() => {
-    // This regex is simplified and might not cover all Markdown cases, but handles basic bold and links.
-    const processLine = (line: string) => {
-      const boldAndLinkRegex = /(\*\*(.*?)\*\*)|(https?:\/\/[^\s)]+)/g;
-      const parts = line.split(boldAndLinkRegex);
+    const formattedAnswer = useMemo(() => {
+        const processLine = (line: string) => {
+            const combinedRegex = /(\*\*(.*?)\*\*)|\[(.*?)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s.,!?\)";:'`]+)/g;
 
-      return parts.map((part, i) => {
-        if (!part) return null;
+            const parts = line.split(combinedRegex);
 
-        // Handle bold text
-        if (part.startsWith('**') && part.endsWith('**')) {
-          return <strong key={i}>{part.substring(2, part.length - 2)}</strong>;
-        }
+            return parts.map((part, i) => {
+                if (!part) return null;
 
-        // Handle links
-        const urlRegex = /(https?:\/\/[^\s)]+)/;
-        if (urlRegex.test(part)) {
-          let cleanUrl = part;
-          const trailingChars = /[.,!?)";:'`]*$/;
-          cleanUrl = part.replace(trailingChars, '');
-          const punctuation = part.substring(cleanUrl.length);
-          return (
-            <React.Fragment key={i}>
-              <a
-                href={cleanUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent underline hover:text-accent/80"
-              >
-                {cleanUrl}
-              </a>
-              {punctuation}
-            </React.Fragment>
-          );
-        }
-        
-        return part;
-      });
-    };
+                // Handle bold text
+                if (part.startsWith('**') && part.endsWith('**')) {
+                    return <strong key={i}>{part.substring(2, part.length - 2)}</strong>;
+                }
 
-    const lines = answer.split('\n');
-    const elements: (JSX.Element | null)[] = [];
-    let listItems: string[] = [];
+                // Check if it is a full markdown link from the regex match
+                // The split will give us [full, bold, bold_content, link_text, link_url, standalone_url]
+                // We check if the previous parts match the markdown link structure.
+                if (i > 3 && parts[i-1] && parts[i-2] && parts[i-3] && parts[i-3].startsWith('[')) {
+                    // This is a markdown link: [text](url)
+                    // parts[i-3] is the text, parts[i-2] is the url
+                    if (part === parts[i-2]) { // Current part is the URL of a markdown link
+                      return (
+                        <a
+                          key={i}
+                          href={parts[i-2]}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-accent underline hover:text-accent/80"
+                        >
+                          {parts[i-3]}
+                        </a>
+                      );
+                    }
+                    if (part === parts[i-3] || part === `[${parts[i-3]}](${parts[i-2]})` || part === parts[i-1]) {
+                      // This part is the text component or the full markdown string, which we have already processed.
+                      // We return null to avoid duplicating it.
+                      return null; 
+                    }
+                }
+                
+                // Handle standalone links
+                const urlRegex = /https?:\/\/[^\s.,!?\)";:'`]+/;
+                if (urlRegex.test(part)) {
+                  // It's a standalone link
+                   return (
+                    <a
+                      key={i}
+                      href={part}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-accent underline hover:text-accent/80"
+                    >
+                      {part}
+                    </a>
+                   );
+                }
 
-    lines.forEach((line, index) => {
-      const trimmedLine = line.trim();
-      if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ')) {
-        listItems.push(trimmedLine.substring(2));
-      } else {
+                return part;
+            });
+        };
+
+        const lines = answer.split('\n');
+        const elements: (JSX.Element | null)[] = [];
+        let listItems: string[] = [];
+
+        lines.forEach((line, index) => {
+            const trimmedLine = line.trim();
+            if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ')) {
+                listItems.push(trimmedLine.substring(2));
+            } else {
+                if (listItems.length > 0) {
+                    elements.push(
+                        <ul key={`ul-${index}`} className="list-disc pl-5 mb-4 space-y-2">
+                            {listItems.map((item, itemIndex) => (
+                                <li key={itemIndex}>{processLine(item)}</li>
+                            ))}
+                        </ul>
+                    );
+                    listItems = [];
+                }
+                if (trimmedLine) {
+                    elements.push(
+                        <p key={`p-${index}`} className="mb-4 last:mb-0">
+                            {processLine(trimmedLine)}
+                        </p>
+                    );
+                }
+            }
+        });
+
         if (listItems.length > 0) {
-          elements.push(
-            <ul key={`ul-${index}`} className="list-disc pl-5 mb-4 space-y-2">
-              {listItems.map((item, itemIndex) => (
-                <li key={itemIndex}>{processLine(item)}</li>
-              ))}
-            </ul>
-          );
-          listItems = [];
+            elements.push(
+                <ul key="ul-last" className="list-disc pl-5 mb-4 space-y-2">
+                    {listItems.map((item, itemIndex) => (
+                        <li key={itemIndex}>{processLine(item)}</li>
+                    ))}
+                </ul>
+            );
         }
-        if (trimmedLine) {
-          elements.push(
-            <p key={`p-${index}`} className="mb-4 last:mb-0">
-              {processLine(trimmedLine)}
-            </p>
-          );
-        }
-      }
-    });
 
-    if (listItems.length > 0) {
-      elements.push(
-        <ul key="ul-last" className="list-disc pl-5 mb-4 space-y-2">
-          {listItems.map((item, itemIndex) => (
-            <li key={itemIndex}>{processLine(item)}</li>
-          ))}
-        </ul>
-      );
-    }
-    
-    return elements.filter(Boolean);
+        return elements.filter(Boolean);
 
-  }, [answer]);
+    }, [answer]);
 
-  return (
-    <Card className="bg-secondary/50">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Bot className="text-primary" />
-          Respuesta de la IA
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="text-base leading-relaxed prose prose-sm max-w-none prose-p:mb-4 prose-ul:mb-4">
-        {formattedAnswer}
-      </CardContent>
-    </Card>
-  );
+    return (
+        <Card className="bg-secondary/50">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                    <Bot className="text-primary" />
+                    Respuesta de la IA
+                </CardTitle>
+            </CardHeader>
+            <CardContent className="text-base leading-relaxed prose prose-sm max-w-none prose-p:mb-4 prose-ul:mb-4">
+                {formattedAnswer}
+            </CardContent>
+        </Card>
+    );
 });
 
 function SearchResults({ results }: { results: SearchDocumentsOutput['results'] }) {
