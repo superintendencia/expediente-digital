@@ -241,31 +241,41 @@ const MemoizedAIAnswer = React.memo(function AIAnswer({ answer }: { answer: stri
 function SearchResults({ results }: { results: SearchDocumentsOutput['results'] }) {
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-      {results.map((item) => (
-        <Card key={item._id} className="flex flex-col">
-          <CardHeader>
-            <CardTitle className="text-lg">{item.titulo || item.titulo_seccion || 'Documento sin Título'}</CardTitle>
-            <CardDescription>{item.tipo_normativa ? `${item.tipo_normativa} #${item.numero}` : 'Sección del Reglamento'}</CardDescription>
-          </CardHeader>
-          <CardContent className="flex-grow">
-            <p className="text-muted-foreground mb-4">{item.resumen || (item.articulos && item.articulos[0]?.resumen_articulo) || 'No hay resumen disponible.'}</p>
-            <div className="flex flex-wrap gap-2">
-              {(item.palabras_clave || []).map((keyword) => (
-                <Badge key={keyword} variant="secondary">{keyword}</Badge>
-              ))}
+      {results.map((item) => {
+        const title = 
+          (item.tipo_normativa === 'circular' && item.numero) ? `Circular N° ${item.numero}` : 
+          item.titulo || 
+          item.titulo_seccion || 
+          'Documento sin Título';
+
+        const description = item.tipo_normativa ? `${item.tipo_normativa} #${item.numero}` : 'Sección del Reglamento';
+
+        return (
+          <Card key={item._id} className="flex flex-col">
+            <CardHeader>
+              <CardTitle className="text-lg">{title}</CardTitle>
+              <CardDescription>{description}</CardDescription>
+            </CardHeader>
+            <CardContent className="flex-grow">
+              <p className="text-muted-foreground mb-4">{item.resumen || (item.articulos && item.articulos[0]?.resumen_articulo) || 'No hay resumen disponible.'}</p>
+              <div className="flex flex-wrap gap-2">
+                {(item.palabras_clave || []).map((keyword) => (
+                  <Badge key={keyword} variant="secondary">{keyword}</Badge>
+                ))}
+              </div>
+            </CardContent>
+            <div className="p-6 pt-0">
+               {item.link_acceso && (
+                <Button asChild variant="link" className="p-0 h-auto">
+                  <a href={item.link_acceso} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1">
+                    Ver Documento <ArrowRight className="h-4 w-4" />
+                  </a>
+                </Button>
+              )}
             </div>
-          </CardContent>
-          <div className="p-6 pt-0">
-             {item.link_acceso && (
-              <Button asChild variant="link" className="p-0 h-auto">
-                <a href={item.link_acceso} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1">
-                  Ver Documento <ArrowRight className="h-4 w-4" />
-                </a>
-              </Button>
-            )}
-          </div>
-        </Card>
-      ))}
+          </Card>
+        );
+      })}
     </div>
   );
 }
