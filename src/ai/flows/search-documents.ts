@@ -57,22 +57,31 @@ export async function searchDocuments(input: SearchDocumentsInput): Promise<Sear
   return searchDocumentsFlow(input);
 }
 
-const extractKeywordsPrompt = ai.definePrompt({
-  name: 'extractKeywordsPrompt',
+
+const IntentSchema = z.object({
+    intent: z.enum(['search_info', 'count_items', 'unknown']).describe('The user intent.'),
+    keywords: z.array(z.string()).optional().describe('Keywords extracted for search_info intent'),
+});
+
+const extractIntentPrompt = ai.definePrompt({
+  name: 'extractIntentPrompt',
   input: { schema: z.object({ query: z.string() }) },
-  output: { schema: z.object({ keywords: z.array(z.string()).describe('A list of 1 to 5 keywords extracted from the user query.') }) },
-  prompt: `Extract the most relevant keywords from the following user query. Return them as a list of strings.
+  output: { schema: IntentSchema },
+  prompt: `Analyze the user's query to determine their intent. 
+If the user is asking a question to find information, the intent is 'search_info'. Extract the most relevant keywords.
+If the user is asking to count something (e.g., "how many articles", "cuántos instructivos"), the intent is 'count_items'.
+If the intent is not clear, classify it as 'unknown'.
+
 Query: {{{query}}}`,
 });
 
-// Define the prompt
-const searchDocumentsPrompt = ai.definePrompt({
-  name: 'searchDocumentsPrompt',
+const generateAnswerPrompt = ai.definePrompt({
+  name: 'generateAnswerPrompt',
   input: {
     schema: z.object({
       query: z.string(),
       documentType: z.string(),
-      results: z.string(),
+      context: z.string(),
     }),
   },
   output: {
@@ -80,28 +89,22 @@ const searchDocumentsPrompt = ai.definePrompt({
       answer: z.string(),
     }),
   },
-  prompt: `You are an AI assistant designed to search and analyze documents from a database.
-
-You will be provided with a user query, the type of document to search for (circular, instruction, or regulation), and the search results from the database.
-
-Your task is to:
-1.  Analyze the retrieved documents and provide a concise and informative answer to the user query.
-2.  If a document has a 'link_acceso', include it in your answer.
-3.  If documentType is regulation always return 'https://personal.justucuman.gov.ar/pdf/Reglamento%20de%20Expediente%20Digital.pdf' as link.
-4.  Do not use any external sources or hallucinate information.
-5.  Answer in Spanish.
-
-Here is the information you will use:
+  prompt: `You are an AI assistant designed to analyze documents and answer user questions.
+Answer in Spanish.
 
 User Query: {{{query}}}
 Document Type: {{{documentType}}}
 
-Here are the search results from the database:
-{{{results}}}
+Context from Database:
+{{{context}}}
 
-
-Answer:`,
+Based on the context, provide a concise and informative answer to the user's query. 
+If the context contains search results, summarize them and include links ('link_acceso') if available.
+If the context is a number, formulate a sentence with that number. For example, if the query was "how many articles" and the context is "45", the answer should be "El reglamento tiene 45 artículos."
+If documentType is regulation always return 'https://personal.justucuman.gov.ar/pdf/Reglamento%20de%20Expediente%20Digital.pdf' as link when relevant.
+`,
 });
+
 
 // Define the flow
 const searchDocumentsFlow = ai.defineFlow(
@@ -111,63 +114,92 @@ const searchDocumentsFlow = ai.defineFlow(
     outputSchema: SearchDocumentsOutputSchema,
   },
   async input => {
-    // 1. Extract keywords from the query
-    const { output: keywordsOutput } = await extractKeywordsPrompt({ query: input.query });
-    if (!keywordsOutput || keywordsOutput.keywords.length === 0) {
+    // 1. Determine user intent
+    const { output: intentOutput } = await extractIntentPrompt({ query: input.query });
+    if (!intentOutput) {
         return {
             results: [],
-            answer: "No se pudieron extraer palabras clave de su consulta. Por favor, intente reformularla.",
+            answer: "No pude determinar la intención de su consulta. Por favor, intente reformularla.",
         };
     }
     
-    const keywords = keywordsOutput.keywords;
-    
-    // Connect to MongoDB
-    const client = new MongoClient(input.mongodbUri);
+    const { intent, keywords } = intentOutput;
 
+    const client = new MongoClient(input.mongodbUri);
     try {
       await client.connect();
       const db: Db = client.db(input.mongodbDatabaseName);
       const collection = db.collection(input.mongodbCollectionName);
 
-      // 2. Construct a more intelligent search query
-      const queryRegexes = keywords.map(keyword => ({ $regex: keyword, $options: 'i' }));
-      const queryIn = { $in: keywords.map(keyword => new RegExp(keyword, 'i')) };
-      
-      let searchQuery = {};
-      const orClauses = [];
+      let context = "";
+      let results: any[] = [];
 
-      const textSearchFields = ['resumen', 'titulo', 'tema'];
-      const keywordSearchFields = ['palabras_clave'];
+      if (intent === 'count_items') {
+        let count = 0;
+        if (input.documentType === 'regulation') {
+            // For regulations, we count the articles within the documents.
+            const aggregation = [
+                { $unwind: "$articulos" },
+                { $count: "total_articles" }
+            ];
+            const result = await collection.aggregate(aggregation).toArray();
+            count = result.length > 0 ? result[0].total_articles : 0;
+        } else {
+            // For circulars and instructions, we count the documents.
+            count = await collection.countDocuments();
+        }
+        context = String(count);
 
-      if (input.documentType === 'regulation') {
-        textSearchFields.push('titulo_seccion', 'articulos.resumen_articulo');
-        keywordSearchFields.push('articulos.palabras_clave_articulo');
-      }
-
-      queryRegexes.forEach(regex => {
-        textSearchFields.forEach(field => {
-            orClauses.push({ [field]: regex });
+      } else if (intent === 'search_info') {
+        if (!keywords || keywords.length === 0) {
+            return {
+                results: [],
+                answer: "No se pudieron extraer palabras clave de su consulta. Por favor, intente reformularla.",
+            };
+        }
+        const queryRegexes = keywords.map(keyword => ({ $regex: keyword, $options: 'i' }));
+        const queryIn = { $in: keywords.map(keyword => new RegExp(keyword, 'i')) };
+        
+        let searchQuery = {};
+        const orClauses = [];
+  
+        const textSearchFields = ['resumen', 'titulo', 'tema'];
+        const keywordSearchFields = ['palabras_clave'];
+  
+        if (input.documentType === 'regulation') {
+          textSearchFields.push('titulo_seccion', 'articulos.resumen_articulo');
+          keywordSearchFields.push('articulos.palabras_clave_articulo');
+        }
+  
+        queryRegexes.forEach(regex => {
+          textSearchFields.forEach(field => {
+              orClauses.push({ [field]: regex });
+          });
         });
-      });
-      keywordSearchFields.forEach(field => {
-        orClauses.push({ [field]: queryIn });
-      });
+        keywordSearchFields.forEach(field => {
+          orClauses.push({ [field]: queryIn });
+        });
+  
+        if (orClauses.length > 0) {
+          searchQuery = { $or: orClauses };
+        }
+  
+        results = await collection.find(searchQuery).toArray();
 
-      if (orClauses.length > 0) {
-        searchQuery = { $or: orClauses };
-      }
-
-
-      // 3. Search the collection
-      const results = await collection.find(searchQuery).toArray();
-
-      if (results.length === 0) {
+        if (results.length === 0) {
+          return {
+            results: [],
+            answer: "No se encontraron documentos que coincidan con su búsqueda.",
+          };
+        }
+        context = JSON.stringify(results, null, 2);
+      } else { // unknown intent
         return {
-          results: [],
-          answer: "No se encontraron documentos que coincidan con su búsqueda.",
+            results: [],
+            answer: "No estoy seguro de cómo ayudar con eso. Por favor, intente una consulta diferente.",
         };
       }
+
 
       // Process results before sending them to the prompt or returning them
       const processedResults = results.map(r => {
@@ -194,13 +226,11 @@ const searchDocumentsFlow = ai.defineFlow(
         return result;
       });
 
-      // 4. Generate AI response based on results
-      const resultsString = JSON.stringify(processedResults, null, 2);
-
-      const { output } = await searchDocumentsPrompt({
+      // 4. Generate AI response based on context
+      const { output } = await generateAnswerPrompt({
         query: input.query,
         documentType: input.documentType,
-        results: resultsString,
+        context: context,
       });
 
       return {
