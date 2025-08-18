@@ -242,7 +242,7 @@ function SearchResults({ results }: { results: SearchDocumentsOutput['results'] 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {results.map((item) => {
-        let title = item.titulo || 'Documento sin Título';
+        let title = 'Documento sin Título';
         let description = '';
 
         if (item.tipo_normativa === 'circular' && item.numero) {
@@ -294,6 +294,7 @@ export default function HomePage() {
   const [state, formAction] = useActionState(handleSearch, initialState);
   const { toast } = useToast();
   const { pending } = useFormStatus();
+  const formRef = React.useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     try {
@@ -339,7 +340,18 @@ export default function HomePage() {
     }
   };
 
-  const formRef = React.useRef<HTMLFormElement>(null);
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      event.key === 'Enter' &&
+      !event.shiftKey &&
+      (event.target as HTMLTextAreaElement).value.trim() !== ''
+    ) {
+      event.preventDefault();
+      // Directly call requestSubmit on the form. It's a more modern approach than find and clicking a button.
+      formRef.current?.requestSubmit();
+    }
+  };
+
 
   return (
     <SidebarProvider>
@@ -392,6 +404,7 @@ export default function HomePage() {
                         placeholder="ej., '¿Cuáles son las reglas para las firmas digitales?' o '¿Cuántas circulares hay sobre expedientes digitales?'"
                         className="mt-1 min-h-[100px]"
                         required
+                        onKeyDown={handleKeyDown}
                       />
                       {state.formErrors?.query && <p className="text-sm font-medium text-destructive mt-1">{state.formErrors.query[0]}</p>}
                     </div>
