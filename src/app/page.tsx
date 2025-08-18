@@ -247,7 +247,7 @@ function SearchResults({ results }: { results: SearchDocumentsOutput['results'] 
 }
 
 export default function HomePage() {
-  const [dbSettings, setDbSettings] = useState<DBSettings>({ uri: '', dbName: '' });
+  const [dbSettings, setDbSettings] = useState<DBSettings>({ uri: 'mongodb+srv://superintendenciapjt:SKINHEAD2006@superintendencias.anag72y.mongodb.net/?retryWrites=true&w=majority&appName=SuperintendencIAs', dbName: 'asistentes-expediente-digital' });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const initialState: SearchState = {};
   const [state, formAction] = useActionState(handleSearch, initialState);
@@ -260,11 +260,13 @@ export default function HomePage() {
       if (savedSettings) {
         setDbSettings(JSON.parse(savedSettings));
       } else {
-        setIsSettingsOpen(true);
+        // If no settings are saved, we stick with the hardcoded defaults
+        // but we might still want to allow the user to open settings if they need to.
+        // setIsSettingsOpen(true); // This would open the dialog on first load if no settings are in localStorage.
       }
     } catch (error) {
       console.error('No se pudo cargar la configuración desde localStorage', error);
-      setIsSettingsOpen(true);
+      // setIsSettingsOpen(true); // Optionally open settings on error
     }
   }, []);
 
@@ -410,5 +412,3 @@ export default function HomePage() {
     </SidebarProvider>
   );
 }
-
-    
