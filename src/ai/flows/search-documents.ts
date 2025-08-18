@@ -102,6 +102,7 @@ Answer in Spanish. Your response must be clear, concise, and well-formatted.
 User Query: {{{query}}}
 Document Type: {{{documentType}}}
 User Intent: {{{intent}}}
+Total Results Found: {{{resultsCount}}}
 
 Context from Database:
 {{{context}}}
@@ -111,10 +112,11 @@ Based on the context, provide a comprehensive answer. Follow these rules:
 2.  **Specify the source.** When you extract information, always clarify if it comes from a **circular**, an **instructivo**, or the **reglamento de expediente digital**. For example: "Según la **Circular 05/20**..." or "El **artículo 25 del reglamento de expediente digital** establece que...".
 3.  **Handle listings and summaries (search_info or count_items intent):**
     *   If the context contains a list of documents, summarize them in a structured way, like a list. This is more helpful than just counting them if the list is not excessively long.
-    *   For each item, include its title (or number), a brief summary, and the link ('link_acceso') if available.
+    *   For each item, include its title (or number) and a brief summary.
+    *   If a link ('link_acceso') is available, include it using the Markdown format: **[Ver documento](URL_DEL_LINK)**. Do not just paste the URL.
     *   If the context is just a number (the result of a count), formulate a natural language sentence. For example, if the query was "¿cuántos artículos tiene el reglamento?" and the context is "116", the answer should be "El **reglamento de expediente digital** tiene un total de 116 artículos."
-4.  **Provide the main regulation link.** If the 'documentType' is 'regulation', always include the link 'https://personal.justucuman.gov.ar/pdf/Reglamento%20de%20Expediente%20Digital.pdf' when relevant.
-5.  **Handle long lists.** If the context contains a long list of documents and you are only showing the most relevant, YOU MUST add a note at the end of your response, such as: "Se han encontrado más documentos que coinciden con su búsqueda. Puede ver la lista completa en la pestaña 'Documentos Fuente'." The total number of documents found is {{{resultsCount}}}. Use this to decide if you need to add the warning.
+4.  **Provide the main regulation link.** If the 'documentType' is 'regulation' or the context mentions it, always include the link 'https://personal.justucuman.gov.ar/pdf/Reglamento%20de%20Expediente%20Digital.pdf' when relevant, using the anchor text "Ver reglamento completo".
+5.  **Handle long lists.** If you determine the list of documents in the context is too long to display fully, you MUST add a note at the end of your response, such as: "Se han encontrado más documentos que coinciden con su búsqueda. Puede ver la lista completa en la pestaña 'Documentos Fuente'." The total number of documents found is {{{resultsCount}}}. Use this to decide if you need to add the warning.
 `,
 });
 
@@ -191,40 +193,25 @@ const searchDocumentsFlow = ai.defineFlow(
       
       const searchQuery = buildSearchQuery(keywords, documentType === 'regulation' || documentType === 'all');
 
-      if (intent === 'count_items') {
+      if (intent === 'count_items' && (!keywords || keywords.length === 0)) {
         let totalCount = 0;
-        let countedWithKeywords = false;
-        
         for (const collectionName of collectionsToQuery) {
           const collection = db.collection(collectionName);
           const isRegulation = collectionName === 'reglamentos';
-          const query = buildSearchQuery(keywords, isRegulation);
 
-          if (keywords && keywords.length > 0) {
-            const collectionResults = await collection.find(query).toArray();
-            results = results.concat(collectionResults);
-            countedWithKeywords = true;
-          } else {
-            if (isRegulation) {
+          if (isRegulation) {
               const aggregation = [
                   { $unwind: "$articulos" },
                   { $count: "total_articles" }
               ];
               const result = await collection.aggregate(aggregation).toArray();
               totalCount += result.length > 0 ? result[0].total_articles : 0;
-            } else {
-              totalCount += await collection.countDocuments(query);
-            }
+          } else {
+              totalCount += await collection.countDocuments({});
           }
         }
-        
-        if (countedWithKeywords) {
-          context = JSON.stringify(results, null, 2);
-        } else {
-          context = String(totalCount);
-        }
-
-      } else { // search_info
+        context = String(totalCount);
+      } else { // search_info or count_items with keywords
         for (const collectionName of collectionsToQuery) {
             const collection = db.collection(collectionName);
             const isRegulation = collectionName === 'reglamentos';

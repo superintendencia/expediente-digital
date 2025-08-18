@@ -245,15 +245,18 @@ function SearchResults({ results }: { results: SearchDocumentsOutput['results'] 
         let title = 'Documento sin Título';
         let description = '';
 
-        if (item.tipo_normativa === 'circular' && item.numero) {
-          title = `Circular N° ${item.numero}`;
-          description = `Circular`;
-        } else if (item.tipo_normativa === 'instruction' && item.numero) {
-          title = `Instructivo N° ${item.numero}`;
-          description = `Instructivo`;
-        } else if (item.tipo_normativa === 'regulation' || item.titulo_seccion) {
-          title = item.titulo_seccion || item.titulo || 'Sección del Reglamento';
-          description = `Reglamento`;
+        if (item.numero && item.tipo_normativa === 'circular') {
+          title = item.numero;
+          description = 'Circular';
+        } else if (item.numero && item.tipo_normativa === 'instruction') {
+          title = item.numero;
+          description = 'Instructivo';
+        } else if (item.titulo_seccion) {
+          title = item.titulo_seccion;
+          description = 'Reglamento';
+        } else if (item.titulo) {
+          title = item.titulo;
+          description = 'Documento';
         }
 
 
