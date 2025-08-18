@@ -125,21 +125,42 @@ function SettingsDialog({
 const MemoizedAIAnswer = React.memo(function AIAnswer({ answer }: { answer: string }) {
     const formattedAnswer = useMemo(() => {
         const processLine = (line: string): (string | JSX.Element)[] => {
-            const regex = /(\*\*(.*?)\*\*)|\[(.*?)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s.,!?\)";:'`]+)/g;
+            const regex = /(\*\*(?:\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(.*?))\*\*)|\[(.*?)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s.,!?\)";:'`]+)/g;
             let lastIndex = 0;
             const results: (string | JSX.Element)[] = [];
             let match;
 
             while ((match = regex.exec(line)) !== null) {
-                // Text before the match
                 if (match.index > lastIndex) {
                     results.push(line.substring(lastIndex, match.index));
                 }
 
-                const [fullMatch, , boldContent, linkText, linkUrl, standaloneUrl] = match;
+                const [
+                    fullMatch,
+                    boldContent,
+                    boldLinkText,
+                    boldLinkUrl,
+                    boldText,
+                    linkText,
+                    linkUrl,
+                    standaloneUrl,
+                ] = match;
                 
-                if (boldContent) {
-                    results.push(<strong key={lastIndex}>{boldContent}</strong>);
+                if (boldLinkText && boldLinkUrl) {
+                    results.push(
+                        <strong key={lastIndex}>
+                            <a
+                                href={boldLinkUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-accent underline hover:text-accent/80"
+                            >
+                                {boldLinkText}
+                            </a>
+                        </strong>
+                    );
+                } else if (boldText) {
+                    results.push(<strong key={lastIndex}>{boldText}</strong>);
                 } else if (linkText && linkUrl) {
                     results.push(
                         <a
@@ -171,7 +192,6 @@ const MemoizedAIAnswer = React.memo(function AIAnswer({ answer }: { answer: stri
                 lastIndex = regex.lastIndex;
             }
 
-            // Text after the last match
             if (lastIndex < line.length) {
                 results.push(line.substring(lastIndex));
             }
@@ -245,34 +265,23 @@ function SearchResults({ results }: { results: SearchDocumentsOutput['results'] 
         let title = 'Documento sin Título';
         let description = '';
 
-        // Check for Circular or Instructivo based on 'numero' and 'tipo_normativa'
-        if (item.numero) {
-          if (item.tipo_normativa === 'circular') {
-            title = item.numero;
-            description = 'Circular';
-          } else if (item.tipo_normativa === 'instructivo') {
-            title = item.numero;
-            description = 'Instructivo';
-          }
-        }
-        // Check for Reglamento based on 'titulo_seccion' or 'articulos'
-        else if (item.titulo_seccion) {
+        if (item.tipo_normativa === 'circular' && item.numero) {
+          title = item.numero;
+          description = 'Circular';
+        } else if (item.tipo_normativa === 'instructivo' && item.numero) {
+          title = item.numero;
+          description = 'Instructivo';
+        } else if (item.titulo_seccion) {
           title = item.titulo_seccion;
           description = 'Reglamento';
-        } 
-        // Fallback to a generic title if available
-        else if (item.titulo) {
+        } else if (item.titulo) {
           title = item.titulo;
           description = 'Documento';
-        }
-        
-        // If still no title, and it has articles, it's likely a regulation article
-        if (title === 'Documento sin Título' && item.articulos && item.articulos[0]?.numero_articulo) {
-          title = `Reglamento - Artículo ${item.articulos[0].numero_articulo}`;
+        } else if (item.articulos && item.articulos.length > 0 && item.articulos[0].numero_articulo) {
+          title = `Artículo ${item.articulos[0].numero_articulo}`;
           description = 'Reglamento';
         }
-
-
+        
         return (
           <Card key={item._id} className="flex flex-col">
             <CardHeader>
@@ -282,11 +291,8 @@ function SearchResults({ results }: { results: SearchDocumentsOutput['results'] 
             <CardContent className="flex-grow">
               <p className="text-muted-foreground mb-4">{item.resumen || (item.articulos && item.articulos[0]?.resumen_articulo) || 'No hay resumen disponible.'}</p>
               <div className="flex flex-wrap gap-2">
-                {(item.palabras_clave || []).map((keyword) => (
-                  <Badge key={keyword} variant="secondary">{keyword}</Badge>
-                ))}
-                 {(item.articulos && item.articulos[0]?.palabras_clave_articulo || []).map((keyword) => (
-                  <Badge key={keyword} variant="secondary">{keyword}</Badge>
+                {(item.palabras_clave || []).concat(item.articulos?.flatMap(a => a.palabras_clave_articulo || []) || []).map((keyword, index) => (
+                  <Badge key={`${keyword}-${index}`} variant="secondary">{keyword}</Badge>
                 ))}
               </div>
             </CardContent>
