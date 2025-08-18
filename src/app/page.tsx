@@ -101,42 +101,86 @@ function SettingsDialog({
 
 const MemoizedAIAnswer = React.memo(function AIAnswer({ answer }: { answer: string }) {
   const formattedAnswer = useMemo(() => {
-    return answer
-      .split('\n')
-      .map((paragraph, index) => {
-        if (paragraph.trim() === '') return null;
-        const urlRegex = /(https?:\/\/[^\s)]+)/g;
-        const parts = paragraph.split(urlRegex);
-        return (
-          <p key={index} className="mb-4 last:mb-0">
-            {parts.map((part, i) => {
-              if (urlRegex.test(part)) {
-                let cleanUrl = part;
-                // Remove trailing punctuation that might be caught by the regex
-                const trailingChars = /[.,!?)";:'`]*$/;
-                cleanUrl = part.replace(trailingChars, '');
-                const punctuation = part.substring(cleanUrl.length);
+    // This regex is simplified and might not cover all Markdown cases, but handles basic bold and links.
+    const processLine = (line: string) => {
+      const boldAndLinkRegex = /(\*\*(.*?)\*\*)|(https?:\/\/[^\s)]+)/g;
+      const parts = line.split(boldAndLinkRegex);
 
-                return (
-                  <React.Fragment key={i}>
-                    <a
-                      href={cleanUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-accent underline hover:text-accent/80"
-                    >
-                      {cleanUrl}
-                    </a>
-                    {punctuation}
-                  </React.Fragment>
-                );
-              }
-              return part;
-            })}
-          </p>
-        );
-      })
-      .filter(Boolean);
+      return parts.map((part, i) => {
+        if (!part) return null;
+
+        // Handle bold text
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return <strong key={i}>{part.substring(2, part.length - 2)}</strong>;
+        }
+
+        // Handle links
+        const urlRegex = /(https?:\/\/[^\s)]+)/;
+        if (urlRegex.test(part)) {
+          let cleanUrl = part;
+          const trailingChars = /[.,!?)";:'`]*$/;
+          cleanUrl = part.replace(trailingChars, '');
+          const punctuation = part.substring(cleanUrl.length);
+          return (
+            <React.Fragment key={i}>
+              <a
+                href={cleanUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent underline hover:text-accent/80"
+              >
+                {cleanUrl}
+              </a>
+              {punctuation}
+            </React.Fragment>
+          );
+        }
+        
+        return part;
+      });
+    };
+
+    const lines = answer.split('\n');
+    const elements: (JSX.Element | null)[] = [];
+    let listItems: string[] = [];
+
+    lines.forEach((line, index) => {
+      const trimmedLine = line.trim();
+      if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ')) {
+        listItems.push(trimmedLine.substring(2));
+      } else {
+        if (listItems.length > 0) {
+          elements.push(
+            <ul key={`ul-${index}`} className="list-disc pl-5 mb-4 space-y-2">
+              {listItems.map((item, itemIndex) => (
+                <li key={itemIndex}>{processLine(item)}</li>
+              ))}
+            </ul>
+          );
+          listItems = [];
+        }
+        if (trimmedLine) {
+          elements.push(
+            <p key={`p-${index}`} className="mb-4 last:mb-0">
+              {processLine(trimmedLine)}
+            </p>
+          );
+        }
+      }
+    });
+
+    if (listItems.length > 0) {
+      elements.push(
+        <ul key="ul-last" className="list-disc pl-5 mb-4 space-y-2">
+          {listItems.map((item, itemIndex) => (
+            <li key={itemIndex}>{processLine(item)}</li>
+          ))}
+        </ul>
+      );
+    }
+    
+    return elements.filter(Boolean);
+
   }, [answer]);
 
   return (
@@ -147,7 +191,9 @@ const MemoizedAIAnswer = React.memo(function AIAnswer({ answer }: { answer: stri
           Respuesta de la IA
         </CardTitle>
       </CardHeader>
-      <CardContent className="text-base leading-relaxed">{formattedAnswer}</CardContent>
+      <CardContent className="text-base leading-relaxed prose prose-sm max-w-none prose-p:mb-4 prose-ul:mb-4">
+        {formattedAnswer}
+      </CardContent>
     </Card>
   );
 });

@@ -95,7 +95,7 @@ const generateAnswerPrompt = ai.definePrompt({
     }),
   },
   prompt: `You are an AI assistant designed to analyze documents and answer user questions.
-Answer in Spanish.
+Answer in Spanish. Your response must be clear, concise, and well-formatted.
 
 User Query: {{{query}}}
 Document Type: {{{documentType}}}
@@ -103,10 +103,12 @@ Document Type: {{{documentType}}}
 Context from Database:
 {{{context}}}
 
-Based on the context, provide a concise and informative answer to the user's query. 
-If the context contains search results, summarize them and include links ('link_acceso') if available.
-If the context is a number, formulate a sentence with that number. For example, if the query was "how many articles" and the context is "45", the answer should be "El reglamento tiene 45 artículos."
-If documentType is regulation always return 'https://personal.justucuman.gov.ar/pdf/Reglamento%20de%20Expediente%20Digital.pdf' as link when relevant.
+Based on the context, provide a comprehensive answer. Follow these rules:
+1.  **Format your response using Markdown.** Use lists, bold text, and other elements to improve readability.
+2.  **Specify the source.** When you extract information, always clarify if it comes from a **circular**, an **instructivo**, or the **reglamento de expediente digital**. For example: "Según la **Circular 05/20**..." or "El **artículo 25 del reglamento de expediente digital** establece que...".
+3.  **Summarize findings.** If the context contains multiple search results, summarize them in a structured way, like a list. Include links ('link_acceso') if available for each item.
+4.  **Handle counts.** If the context is a number (because the user asked to count something), formulate a natural language sentence. For example, if the query was "¿cuántos artículos tiene el reglamento?" and the context is "116", the answer should be "El **reglamento de expediente digital** tiene un total de 116 artículos."
+5.  **Provide the main regulation link.** If the 'documentType' is 'regulation', always include the link 'https://personal.justucuman.gov.ar/pdf/Reglamento%20de%20Expediente%20Digital.pdf' when relevant.
 `,
 });
 
