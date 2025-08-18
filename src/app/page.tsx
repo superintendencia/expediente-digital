@@ -242,24 +242,26 @@ function SearchResults({ results }: { results: SearchDocumentsOutput['results'] 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {results.map((item) => {
-        let title = 'Documento sin Título';
+        let title = item.titulo || 'Documento sin Título';
+        let description = '';
+
         if (item.tipo_normativa === 'circular' && item.numero) {
           title = `Circular N° ${item.numero}`;
+          description = `Circular`;
         } else if (item.tipo_normativa === 'instruction' && item.numero) {
           title = `Instructivo N° ${item.numero}`;
-        } else if (item.titulo) {
-          title = item.titulo;
-        } else if (item.titulo_seccion) {
-          title = item.titulo_seccion;
+          description = `Instructivo`;
+        } else if (item.tipo_normativa === 'regulation' || item.titulo_seccion) {
+          title = item.titulo_seccion || item.titulo || 'Sección del Reglamento';
+          description = `Reglamento`;
         }
 
-        const description = item.tipo_normativa ? `${item.tipo_normativa} #${item.numero}` : 'Sección del Reglamento';
 
         return (
           <Card key={item._id} className="flex flex-col">
             <CardHeader>
               <CardTitle className="text-lg">{title}</CardTitle>
-              <CardDescription>{description}</CardDescription>
+              {description && <CardDescription>{description}</CardDescription>}
             </CardHeader>
             <CardContent className="flex-grow">
               <p className="text-muted-foreground mb-4">{item.resumen || (item.articulos && item.articulos[0]?.resumen_articulo) || 'No hay resumen disponible.'}</p>
