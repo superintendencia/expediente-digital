@@ -263,25 +263,25 @@ function SearchResults({ results }: { results: SearchDocumentsOutput['results'] 
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {results.map((item) => {
         let title = 'Documento sin Título';
-        let description = '';
+        let description = item.titulo || item.titulo_seccion || '';
 
         if (item.tipo_normativa === 'circular' && item.numero) {
-          title = item.numero;
-          description = 'Circular';
+          title = `Circular ${item.numero}`;
         } else if (item.tipo_normativa === 'instructivo' && item.numero) {
-          title = item.numero;
-          description = 'Instructivo';
-        } else if (item.titulo_seccion) {
-          title = item.titulo_seccion;
-          description = 'Reglamento';
-        } else if (item.titulo) {
-          title = item.titulo;
-          description = 'Documento';
+          title = `Instructivo ${item.numero}`;
         } else if (item.articulos && item.articulos.length > 0 && item.articulos[0].numero_articulo) {
           title = `Artículo ${item.articulos[0].numero_articulo}`;
-          description = 'Reglamento';
+          if (!description) {
+            description = 'Reglamento de Expediente Digital';
+          }
         }
         
+        // Final fallback if no specific title could be generated
+        if (title === 'Documento sin Título' && description) {
+            title = description;
+            description = '';
+        }
+
         return (
           <Card key={item._id} className="flex flex-col">
             <CardHeader>
@@ -325,15 +325,13 @@ export default function HomePage() {
     try {
       const savedSettings = localStorage.getItem('digitaliusDbSettings');
       if (savedSettings) {
-        setDbSettings(JSON.parse(savedSettings));
-      } else {
-        // If no settings are saved, we stick with the hardcoded defaults
-        // but we might still want to allow the user to open settings if they need to.
-        // setIsSettingsOpen(true); // This would open the dialog on first load if no settings are in localStorage.
+        const parsedSettings = JSON.parse(savedSettings);
+        if (parsedSettings.uri && parsedSettings.dbName) {
+            setDbSettings(parsedSettings);
+        }
       }
     } catch (error) {
       console.error('No se pudo cargar la configuración desde localStorage', error);
-      // setIsSettingsOpen(true); // Optionally open settings on error
     }
   }, []);
 
@@ -372,7 +370,6 @@ export default function HomePage() {
       (event.target as HTMLTextAreaElement).value.trim() !== ''
     ) {
       event.preventDefault();
-      // Directly call requestSubmit on the form. It's a more modern approach than find and clicking a button.
       formRef.current?.requestSubmit();
     }
   };
