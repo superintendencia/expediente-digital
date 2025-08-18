@@ -242,11 +242,16 @@ function SearchResults({ results }: { results: SearchDocumentsOutput['results'] 
   return (
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
       {results.map((item) => {
-        const title = 
-          (item.tipo_normativa === 'circular' && item.numero) ? `Circular N° ${item.numero}` : 
-          item.titulo || 
-          item.titulo_seccion || 
-          'Documento sin Título';
+        let title = 'Documento sin Título';
+        if (item.tipo_normativa === 'circular' && item.numero) {
+          title = `Circular N° ${item.numero}`;
+        } else if (item.tipo_normativa === 'instruction' && item.numero) {
+          title = `Instructivo N° ${item.numero}`;
+        } else if (item.titulo) {
+          title = item.titulo;
+        } else if (item.titulo_seccion) {
+          title = item.titulo_seccion;
+        }
 
         const description = item.tipo_normativa ? `${item.tipo_normativa} #${item.numero}` : 'Sección del Reglamento';
 
