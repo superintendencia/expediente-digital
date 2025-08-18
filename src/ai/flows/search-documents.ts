@@ -64,7 +64,7 @@ const collectionMap: Record<'circular' | 'instruction' | 'regulation', string> =
 const IntentSchema = z.object({
     intent: z.enum(['search_info', 'count_items', 'unknown']).describe('The user intent.'),
     documentType: z.enum(['circular', 'instruction', 'regulation', 'all']).optional().describe('The type of document the user is asking about. "all" if not specified.'),
-    keywords: z.array(z.string()).optional().describe('Keywords extracted for search_info intent'),
+    keywords: z.array(z.string()).optional().describe('Keywords extracted for search_info or count_items intent'),
 });
 
 const extractIntentPrompt = ai.definePrompt({
@@ -74,7 +74,7 @@ const extractIntentPrompt = ai.definePrompt({
   prompt: `Analyze the user's query to determine their intent and the type of document they are interested in.
 The document types can be 'circular', 'instruction', or 'regulation'. If no specific type is mentioned, classify it as 'all'.
 If the user is asking a question to find information, the intent is 'search_info'. Extract the most relevant keywords.
-If the user is asking to count something (e.g., "how many articles", "cuántos instructivos"), the intent is 'count_items'.
+If the user is asking to count something (e.g., "how many articles", "cuántos instructivos"), the intent is 'count_items'. Also extract keywords if the count is conditioned (e.g., "cuántas circulares sobre superintendencia").
 If the intent is not clear, classify it as 'unknown'.
 
 Query: {{{query}}}`,
@@ -112,6 +112,32 @@ Based on the context, provide a comprehensive answer. Follow these rules:
 `,
 });
 
+const buildSearchQuery = (keywords: string[], isRegulation: boolean) => {
+    const queryRegexes = keywords.map(keyword => ({ $regex: keyword, $options: 'i' }));
+    const queryIn = { $in: keywords.map(keyword => new RegExp(keyword, 'i')) };
+    
+    const orClauses: any[] = [];
+
+    const textSearchFields = ['resumen', 'titulo', 'tema'];
+    const keywordSearchFields = ['palabras_clave'];
+
+    if (isRegulation) {
+        textSearchFields.push('titulo_seccion', 'articulos.resumen_articulo');
+        keywordSearchFields.push('articulos.palabras_clave_articulo');
+    }
+
+    queryRegexes.forEach(regex => {
+        textSearchFields.forEach(field => {
+            orClauses.push({ [field]: regex });
+        });
+    });
+    keywordSearchFields.forEach(field => {
+        orClauses.push({ [field]: queryIn });
+    });
+
+    return orClauses.length > 0 ? { $or: orClauses } : {};
+};
+
 
 // Define the flow
 const searchDocumentsFlow = ai.defineFlow(
@@ -147,9 +173,11 @@ const searchDocumentsFlow = ai.defineFlow(
       
       if (intent === 'count_items') {
         let totalCount = 0;
+        const searchQuery = (keywords && keywords.length > 0) ? buildSearchQuery(keywords, documentType === 'regulation' || documentType === 'all') : {};
+
         for (const collectionName of collectionsToQuery) {
           const collection = db.collection(collectionName);
-          if (collectionName === 'reglamentos') {
+          if (collectionName === 'reglamentos' && (!keywords || keywords.length === 0)) {
               const aggregation = [
                   { $unwind: "$articulos" },
                   { $count: "total_articles" }
@@ -157,7 +185,9 @@ const searchDocumentsFlow = ai.defineFlow(
               const result = await collection.aggregate(aggregation).toArray();
               totalCount += result.length > 0 ? result[0].total_articles : 0;
           } else {
-              totalCount += await collection.countDocuments();
+             const isRegulation = collectionName === 'reglamentos';
+             const query = (keywords && keywords.length > 0) ? buildSearchQuery(keywords, isRegulation) : {};
+             totalCount += await collection.countDocuments(query);
           }
         }
         context = String(totalCount);
@@ -170,37 +200,11 @@ const searchDocumentsFlow = ai.defineFlow(
             };
         }
         
-        const queryRegexes = keywords.map(keyword => ({ $regex: keyword, $options: 'i' }));
-        const queryIn = { $in: keywords.map(keyword => new RegExp(keyword, 'i')) };
-        
         for (const collectionName of collectionsToQuery) {
             const collection = db.collection(collectionName);
-            let searchQuery = {};
-            const orClauses = [];
-
             const isRegulation = collectionName === 'reglamentos';
-
-            const textSearchFields = ['resumen', 'titulo', 'tema'];
-            const keywordSearchFields = ['palabras_clave'];
-    
-            if (isRegulation) {
-            textSearchFields.push('titulo_seccion', 'articulos.resumen_articulo');
-            keywordSearchFields.push('articulos.palabras_clave_articulo');
-            }
-    
-            queryRegexes.forEach(regex => {
-            textSearchFields.forEach(field => {
-                orClauses.push({ [field]: regex });
-            });
-            });
-            keywordSearchFields.forEach(field => {
-            orClauses.push({ [field]: queryIn });
-            });
-    
-            if (orClauses.length > 0) {
-            searchQuery = { $or: orClauses };
-            }
-    
+            const searchQuery = buildSearchQuery(keywords, isRegulation);
+            
             const collectionResults = await collection.find(searchQuery).toArray();
             results = results.concat(collectionResults);
         }
@@ -225,7 +229,7 @@ const searchDocumentsFlow = ai.defineFlow(
         const result: any = { ...r, _id: r._id.toString() };
         
         Object.keys(result).forEach(key => {
-            if (result[key] === null) {
+            if (result[key] === null || result[key] === undefined) {
               delete result[key];
             } else if (result[key] instanceof Date) {
               result[key] = result[key].toISOString();
@@ -234,7 +238,7 @@ const searchDocumentsFlow = ai.defineFlow(
         
         if (result.articulos && Array.isArray(result.articulos)) {
           result.articulos = result.articulos.map((articulo: any) => {
-            if (articulo.numero_articulo) {
+            if (articulo && typeof articulo === 'object' && articulo.numero_articulo) {
                 articulo.numero_articulo = String(articulo.numero_articulo);
             }
             return articulo;
