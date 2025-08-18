@@ -24,12 +24,6 @@ type DBSettings = {
   dbName: string;
 };
 
-const documentTypes = [
-  { value: 'circular', label: 'Circulares', icon: FileBadge },
-  { value: 'instruction', label: 'Instructivos', icon: FileArchive },
-  { value: 'regulation', label: 'Reglamentos', icon: BookCopy },
-];
-
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
@@ -279,38 +273,18 @@ export default function HomePage() {
                 <Card>
                   <CardHeader>
                     <CardTitle>Nueva Consulta</CardTitle>
-                    <CardDescription>Selecciona un tipo de documento e introduce tu consulta para buscar.</CardDescription>
+                    <CardDescription>Introduce tu consulta para buscar en todos los documentos.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <input type="hidden" name="mongodbUri" value={dbSettings.uri} />
                     <input type="hidden" name="mongodbDatabaseName" value={dbSettings.dbName} />
 
                     <div>
-                      <Label htmlFor="documentType">Tipo de Documento</Label>
-                      <Select name="documentType" defaultValue="circular" required>
-                        <SelectTrigger id="documentType" className="mt-1">
-                          <SelectValue placeholder="Selecciona un tipo de documento" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {documentTypes.map(({ value, label, icon: Icon }) => (
-                            <SelectItem key={value} value={value}>
-                              <div className="flex items-center gap-2">
-                                <Icon className="h-4 w-4 text-muted-foreground" />
-                                <span>{label}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {state.formErrors?.documentType && <p className="text-sm font-medium text-destructive mt-1">{state.formErrors.documentType[0]}</p>}
-                    </div>
-
-                    <div>
                       <Label htmlFor="query">Tu Consulta</Label>
                       <Textarea
                         id="query"
                         name="query"
-                        placeholder="ej., '¿Cuáles son las reglas para las firmas digitales?'"
+                        placeholder="ej., '¿Cuáles son las reglas para las firmas digitales?' o '¿Cuántas circulares hay sobre expedientes digitales?'"
                         className="mt-1 min-h-[100px]"
                         required
                       />
