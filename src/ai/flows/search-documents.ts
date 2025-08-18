@@ -108,17 +108,17 @@ Context from Database:
 Based on the context, provide a comprehensive answer. Follow these rules:
 1.  **Format your response using Markdown.** Use lists, bold text, and other elements to improve readability.
 2.  **Specify the source.** When you extract information, always clarify if it comes from a **circular**, an **instructivo**, or the **reglamento de expediente digital**. For example: "Según la **Circular 05/20**..." or "El **artículo 25 del reglamento de expediente digital** establece que...".
-3.  **Handle listings and summaries (search_info intent):**
-    *   If the context contains multiple search results, summarize them in a structured way, like a list.
+3.  **Handle listings and summaries (search_info or count_items intent):**
+    *   If the context contains a list of documents, summarize them in a structured way, like a list. This is more helpful than just counting them if the list is not excessively long.
     *   For each item, include its title (or number), a brief summary, and the link ('link_acceso') if available.
-4.  **Handle counts (count_items intent):**
-    *   If the user intent was to count items and the context is a **number**, formulate a natural language sentence. For example, if the query was "¿cuántos artículos tiene el reglamento?" and the context is "116", the answer should be "El **reglamento de expediente digital** tiene un total de 116 artículos."
-    *   If the user intent was to count, but the context is a **list of documents** (because the number of results is small), **list the documents found instead of just counting them**. For example, if the query was "cuántos instructivos sobre firma digital hay" and you found 2, respond with "Se han encontrado 2 instructivos sobre firma digital:" and then list each one with its title and link. This is more helpful.
-5.  **Provide the main regulation link.** If the 'documentType' is 'regulation', always include the link 'https://personal.justucuman.gov.ar/pdf/Reglamento%20de%20Expediente%20Digital.pdf' when relevant.
+    *   If the context is just a number (the result of a count), formulate a natural language sentence. For example, if the query was "¿cuántos artículos tiene el reglamento?" and the context is "116", the answer should be "El **reglamento de expediente digital** tiene un total de 116 artículos."
+4.  **Provide the main regulation link.** If the 'documentType' is 'regulation', always include the link 'https://personal.justucuman.gov.ar/pdf/Reglamento%20de%20Expediente%20Digital.pdf' when relevant.
 `,
 });
 
 const buildSearchQuery = (keywords: string[], isRegulation: boolean) => {
+    if (!keywords || keywords.length === 0) return {};
+
     const queryRegexes = keywords.map(keyword => ({ $regex: keyword, $options: 'i' }));
     const queryIn = { $in: keywords.map(keyword => new RegExp(keyword, 'i')) };
     
@@ -165,10 +165,13 @@ const searchDocumentsFlow = ai.defineFlow(
     const { intent, documentType = 'all', keywords } = intentOutput;
 
     if (intent === 'unknown' || !keywords || keywords.length === 0) {
-        return {
-            results: [],
-            answer: "No estoy seguro de cómo ayudar con eso. Por favor, intente una consulta diferente o más específica.",
-        };
+      if (input.query.toLowerCase().includes('hola')) {
+         return { results: [], answer: "¡Hola! Soy Digitalius, tu asistente de IA para la búsqueda de documentos. ¿En qué puedo ayudarte hoy?" };
+      }
+      return {
+        results: [],
+        answer: "No estoy seguro de cómo ayudar con eso. Por favor, intente una consulta diferente o más específica.",
+      };
     }
     
     const client = new MongoClient(input.mongodbUri);
@@ -186,40 +189,23 @@ const searchDocumentsFlow = ai.defineFlow(
       
       const searchQuery = buildSearchQuery(keywords, documentType === 'regulation' || documentType === 'all');
 
-      if (intent === 'count_items') {
-        let totalCount = 0;
-        for (const collectionName of collectionsToQuery) {
-          const collection = db.collection(collectionName);
-          const isRegulation = collectionName === 'reglamentos';
-          const query = buildSearchQuery(keywords, isRegulation);
-
-          if (collectionName === 'reglamentos' && (!keywords || keywords.length === 0)) {
-              const aggregation = [
-                  { $unwind: "$articulos" },
-                  { $count: "total_articles" }
-              ];
-              const result = await collection.aggregate(aggregation).toArray();
-              totalCount += result.length > 0 ? result[0].total_articles : 0;
-          } else {
-             totalCount += await collection.countDocuments(query);
-          }
-        }
-        
-        // If count is low, get the documents themselves to provide a richer answer.
-        if (totalCount > 0 && totalCount <= 5) {
-            for (const collectionName of collectionsToQuery) {
-                const collection = db.collection(collectionName);
-                const isRegulation = collectionName === 'reglamentos';
-                const query = buildSearchQuery(keywords, isRegulation);
-                const collectionResults = await collection.find(query).toArray();
-                results = results.concat(collectionResults);
+      if (intent === 'count_items' && (!keywords || keywords.length === 0)) {
+         let totalCount = 0;
+         for (const collectionName of collectionsToQuery) {
+            const collection = db.collection(collectionName);
+            if (collectionName === 'reglamentos') {
+                const aggregation = [
+                    { $unwind: "$articulos" },
+                    { $count: "total_articles" }
+                ];
+                const result = await collection.aggregate(aggregation).toArray();
+                totalCount += result.length > 0 ? result[0].total_articles : 0;
+            } else {
+               totalCount += await collection.countDocuments(searchQuery);
             }
-            context = JSON.stringify(results, null, 2);
-        } else {
-            context = String(totalCount);
-        }
-
-      } else if (intent === 'search_info') {
+         }
+         context = String(totalCount);
+      } else { // search_info or count_items with keywords
         for (const collectionName of collectionsToQuery) {
             const collection = db.collection(collectionName);
             const isRegulation = collectionName === 'reglamentos';
@@ -236,7 +222,6 @@ const searchDocumentsFlow = ai.defineFlow(
           };
         }
         context = JSON.stringify(results, null, 2);
-        
       }
 
       // Process results before sending them to the prompt or returning them
