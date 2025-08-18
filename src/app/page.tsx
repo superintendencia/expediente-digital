@@ -245,18 +245,31 @@ function SearchResults({ results }: { results: SearchDocumentsOutput['results'] 
         let title = 'Documento sin Título';
         let description = '';
 
-        if (item.numero && item.tipo_normativa === 'circular') {
-          title = item.numero;
-          description = 'Circular';
-        } else if (item.numero && item.tipo_normativa === 'instruction') {
-          title = item.numero;
-          description = 'Instructivo';
-        } else if (item.titulo_seccion) {
+        // Check for Circular or Instructivo based on 'numero' and 'tipo_normativa'
+        if (item.numero) {
+          if (item.tipo_normativa === 'circular') {
+            title = item.numero;
+            description = 'Circular';
+          } else if (item.tipo_normativa === 'instructivo') {
+            title = item.numero;
+            description = 'Instructivo';
+          }
+        }
+        // Check for Reglamento based on 'titulo_seccion' or 'articulos'
+        else if (item.titulo_seccion) {
           title = item.titulo_seccion;
           description = 'Reglamento';
-        } else if (item.titulo) {
+        } 
+        // Fallback to a generic title if available
+        else if (item.titulo) {
           title = item.titulo;
           description = 'Documento';
+        }
+        
+        // If still no title, and it has articles, it's likely a regulation article
+        if (title === 'Documento sin Título' && item.articulos && item.articulos[0]?.numero_articulo) {
+          title = `Reglamento - Artículo ${item.articulos[0].numero_articulo}`;
+          description = 'Reglamento';
         }
 
 
@@ -270,6 +283,9 @@ function SearchResults({ results }: { results: SearchDocumentsOutput['results'] 
               <p className="text-muted-foreground mb-4">{item.resumen || (item.articulos && item.articulos[0]?.resumen_articulo) || 'No hay resumen disponible.'}</p>
               <div className="flex flex-wrap gap-2">
                 {(item.palabras_clave || []).map((keyword) => (
+                  <Badge key={keyword} variant="secondary">{keyword}</Badge>
+                ))}
+                 {(item.articulos && item.articulos[0]?.palabras_clave_articulo || []).map((keyword) => (
                   <Badge key={keyword} variant="secondary">{keyword}</Badge>
                 ))}
               </div>
