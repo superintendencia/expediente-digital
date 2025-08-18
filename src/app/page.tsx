@@ -23,6 +23,30 @@ type DBSettings = {
   dbName: string;
 };
 
+function DigitaliusLogo({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2Z"
+        fill="currentColor"
+        className="text-sidebar-primary"
+      />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M12 5.5C8.96243 5.5 6.5 7.96243 6.5 11V13C6.5 15.0376 8.96243 18.5 12 18.5C15.0376 18.5 17.5 16.0376 17.5 13V11C17.5 7.96243 15.0376 5.5 12 5.5ZM12 8.5C13.3807 8.5 14.5 9.61929 14.5 11V13C14.5 14.3807 13.3807 15.5 12 15.5C10.6193 15.5 9.5 14.3807 9.5 13V11C9.5 9.61929 10.6193 8.5 12 8.5Z"
+        fill="hsl(var(--sidebar-background))"
+      />
+    </svg>
+  );
+}
+
+
 function SubmitButton() {
   const { pending } = useFormStatus();
   return (
@@ -256,7 +280,7 @@ export default function HomePage() {
 
   useEffect(() => {
     try {
-      const savedSettings = localStorage.getItem('lexiAssistDbSettings');
+      const savedSettings = localStorage.getItem('digitaliusDbSettings');
       if (savedSettings) {
         setDbSettings(JSON.parse(savedSettings));
       } else {
@@ -283,7 +307,7 @@ export default function HomePage() {
   const handleSaveSettings = (settings: DBSettings) => {
     setDbSettings(settings);
     try {
-      localStorage.setItem('lexiAssistDbSettings', JSON.stringify(settings));
+      localStorage.setItem('digitaliusDbSettings', JSON.stringify(settings));
       toast({
         title: 'Configuración Guardada',
         description: 'La configuración de tu base de datos ha sido guardada localmente.',
@@ -306,8 +330,8 @@ export default function HomePage() {
         <Sidebar>
           <SidebarHeader>
             <div className="flex items-center gap-2 p-2">
-              <Bot className="h-8 w-8 text-sidebar-primary" />
-              <h1 className="text-xl font-semibold text-sidebar-foreground">LexiAssist</h1>
+              <DigitaliusLogo className="h-8 w-8 text-sidebar-primary" />
+              <h1 className="text-xl font-semibold text-sidebar-foreground">Digitalius</h1>
             </div>
           </SidebarHeader>
           <SidebarContent>
@@ -372,7 +396,7 @@ export default function HomePage() {
               {!pending && !state.data && (
                 <div className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed p-8 text-center">
                   <Bot className="h-16 w-16 text-muted-foreground/50" />
-                  <h3 className="text-xl font-semibold">Bienvenido a LexiAssist</h3>
+                  <h3 className="text-xl font-semibold">Bienvenido a Digitalius</h3>
                   <p className="text-muted-foreground">Tu asistente de documentos con IA. <br />Comienza introduciendo una consulta arriba.</p>
                 </div>
               )}

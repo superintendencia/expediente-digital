@@ -3,7 +3,7 @@ import './globals.css';
 import { Toaster } from '@/components/ui/toaster';
 
 export const metadata: Metadata = {
-  title: 'LexiAssist',
+  title: 'Digitalius',
   description: 'AI assistant for document search and analysis.',
 };
 
