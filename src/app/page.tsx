@@ -3,21 +3,20 @@
 
 import React, { useEffect, useState, useMemo, useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { Bot, Cog, FileText, Info, Loader2, Search, Send, FileArchive, BookCopy, FileBadge, ArrowRight } from 'lucide-react';
+import { Bot, Cog, FileText, Info, Loader2, Search, Send, ArrowRight } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarInset, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from '@/components/ui/sidebar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { handleSearch, type SearchState } from './actions';
 import type { SearchDocumentsOutput } from '@/ai/flows/search-documents';
+import { Textarea } from '@/components/ui/textarea';
 
 type DBSettings = {
   uri: string;
@@ -101,69 +100,65 @@ function SettingsDialog({
 
 const MemoizedAIAnswer = React.memo(function AIAnswer({ answer }: { answer: string }) {
     const formattedAnswer = useMemo(() => {
-        const processLine = (line: string) => {
-            const combinedRegex = /(\*\*(.*?)\*\*)|\[(.*?)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s.,!?\)";:'`]+)/g;
+        const processLine = (line: string): (string | JSX.Element)[] => {
+            const regex = /(\*\*(.*?)\*\*)|\[(.*?)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s.,!?\)";:'`]+)/g;
+            let lastIndex = 0;
+            const results: (string | JSX.Element)[] = [];
+            let match;
 
-            const parts = line.split(combinedRegex);
-
-            return parts.map((part, i) => {
-                if (!part) return null;
-
-                // Handle bold text
-                if (part.startsWith('**') && part.endsWith('**')) {
-                    return <strong key={i}>{part.substring(2, part.length - 2)}</strong>;
+            while ((match = regex.exec(line)) !== null) {
+                // Text before the match
+                if (match.index > lastIndex) {
+                    results.push(line.substring(lastIndex, match.index));
                 }
 
-                // Check if it is a full markdown link from the regex match
-                // The split will give us [full, bold, bold_content, link_text, link_url, standalone_url]
-                // We check if the previous parts match the markdown link structure.
-                if (i > 3 && parts[i-1] && parts[i-2] && parts[i-3] && parts[i-3].startsWith('[')) {
-                    // This is a markdown link: [text](url)
-                    // parts[i-3] is the text, parts[i-2] is the url
-                    if (part === parts[i-2]) { // Current part is the URL of a markdown link
-                      return (
+                const [fullMatch, , boldContent, linkText, linkUrl, standaloneUrl] = match;
+                
+                if (boldContent) {
+                    results.push(<strong key={lastIndex}>{boldContent}</strong>);
+                } else if (linkText && linkUrl) {
+                    results.push(
                         <a
-                          key={i}
-                          href={parts[i-2]}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-accent underline hover:text-accent/80"
+                            key={lastIndex}
+                            href={linkUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-accent underline hover:text-accent/80"
                         >
-                          {parts[i-3]}
+                            {linkText}
                         </a>
-                      );
-                    }
-                    if (part === parts[i-3] || part === `[${parts[i-3]}](${parts[i-2]})` || part === parts[i-1]) {
-                      // This part is the text component or the full markdown string, which we have already processed.
-                      // We return null to avoid duplicating it.
-                      return null; 
-                    }
+                    );
+                } else if (standaloneUrl) {
+                     results.push(
+                        <a
+                            key={lastIndex}
+                            href={standaloneUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-accent underline hover:text-accent/80"
+                        >
+                            {standaloneUrl}
+                        </a>
+                    );
+                } else {
+                    results.push(fullMatch);
                 }
                 
-                // Handle standalone links
-                const urlRegex = /https?:\/\/[^\s.,!?\)";:'`]+/;
-                if (urlRegex.test(part)) {
-                  // It's a standalone link
-                   return (
-                    <a
-                      key={i}
-                      href={part}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-accent underline hover:text-accent/80"
-                    >
-                      {part}
-                    </a>
-                   );
-                }
+                lastIndex = regex.lastIndex;
+            }
 
-                return part;
-            });
+            // Text after the last match
+            if (lastIndex < line.length) {
+                results.push(line.substring(lastIndex));
+            }
+
+            return results;
         };
 
         const lines = answer.split('\n');
         const elements: (JSX.Element | null)[] = [];
         let listItems: string[] = [];
+        let listKey = 0;
 
         lines.forEach((line, index) => {
             const trimmedLine = line.trim();
@@ -172,7 +167,7 @@ const MemoizedAIAnswer = React.memo(function AIAnswer({ answer }: { answer: stri
             } else {
                 if (listItems.length > 0) {
                     elements.push(
-                        <ul key={`ul-${index}`} className="list-disc pl-5 mb-4 space-y-2">
+                        <ul key={`ul-${listKey++}`} className="list-disc pl-5 mb-4 space-y-2">
                             {listItems.map((item, itemIndex) => (
                                 <li key={itemIndex}>{processLine(item)}</li>
                             ))}
@@ -415,3 +410,5 @@ export default function HomePage() {
     </SidebarProvider>
   );
 }
+
+    
