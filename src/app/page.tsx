@@ -111,25 +111,34 @@ const MemoizedAIAnswer = React.memo(function AIAnswer({ answer }: { answer: stri
       .split('\n')
       .map((paragraph, index) => {
         if (paragraph.trim() === '') return null;
-        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        const urlRegex = /(https?:\/\/[^\s)]+)/g;
         const parts = paragraph.split(urlRegex);
         return (
           <p key={index} className="mb-4 last:mb-0">
-            {parts.map((part, i) =>
-              urlRegex.test(part) ? (
-                <a
-                  href={part}
-                  key={i}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-accent underline hover:text-accent/80"
-                >
-                  {part}
-                </a>
-              ) : (
-                part
-              )
-            )}
+            {parts.map((part, i) => {
+              if (urlRegex.test(part)) {
+                let cleanUrl = part;
+                // Remove trailing punctuation that might be caught by the regex
+                const trailingChars = /[.,!?)";:'`]*$/;
+                cleanUrl = part.replace(trailingChars, '');
+                const punctuation = part.substring(cleanUrl.length);
+
+                return (
+                  <React.Fragment key={i}>
+                    <a
+                      href={cleanUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-accent underline hover:text-accent/80"
+                    >
+                      {cleanUrl}
+                    </a>
+                    {punctuation}
+                  </React.Fragment>
+                );
+              }
+              return part;
+            })}
           </p>
         );
       })
