@@ -124,41 +124,32 @@ const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instru
     if (!keywords || keywords.length === 0) return {};
 
     const queryRegexes = keywords.map(keyword => ({ $regex: keyword, $options: 'i' }));
-    const queryIn = { $in: keywords.map(keyword => new RegExp(keyword, 'i')) };
     
     const orClauses: any[] = [];
 
     let textSearchFields: string[] = [];
-    let keywordSearchFields: string[] = [];
 
     const documentTypesToQuery = documentType === 'all' ? ['circular', 'instruction', 'regulation'] : [documentType];
 
     if (documentTypesToQuery.includes('circular')) {
-        textSearchFields.push('resumen', 'titulo', 'tema');
-        keywordSearchFields.push('palabras_clave');
+        textSearchFields.push('resumen', 'titulo', 'tema', 'palabras_clave');
     }
     if (documentTypesToQuery.includes('instruction')) {
-        textSearchFields.push('resumen', 'titulo');
-        keywordSearchFields.push('palabras_clave');
+        textSearchFields.push('resumen', 'titulo', 'palabras_clave');
     }
     if (documentTypesToQuery.includes('regulation')) {
-        textSearchFields.push('titulo_seccion', 'articulos.resumen_articulo');
-        keywordSearchFields.push('articulos.palabras_clave_articulo');
+        textSearchFields.push('titulo_seccion', 'articulos.resumen_articulo', 'articulos.palabras_clave_articulo');
     }
 
     // Remove duplicates
     textSearchFields = [...new Set(textSearchFields)];
-    keywordSearchFields = [...new Set(keywordSearchFields)];
-
+    
     queryRegexes.forEach(regex => {
         textSearchFields.forEach(field => {
             orClauses.push({ [field]: regex });
         });
     });
-    keywordSearchFields.forEach(field => {
-        orClauses.push({ [field]: queryIn });
-    });
-
+    
     return orClauses.length > 0 ? { $or: orClauses } : {};
 };
 
@@ -205,45 +196,33 @@ const searchDocumentsFlow = ai.defineFlow(
         ? Object.values(collectionMap)
         : [collectionMap[documentType as 'circular' | 'instruction' | 'regulation']];
       
-      if (intent === 'count_items' && (!keywords || keywords.length === 0)) {
-        let totalCount = 0;
-        for (const collectionName of collectionsToQuery) {
+      for (const collectionName of collectionsToQuery) {
           const collection = db.collection(collectionName);
-          const isRegulation = collectionName === 'reglamentos';
-
-          if (isRegulation) {
-              const aggregation = [
-                  { $unwind: "$articulos" },
-                  { $count: "total_articles" }
-              ];
-              const result = await collection.aggregate(aggregation).toArray();
-              totalCount += result.length > 0 ? result[0].total_articles : 0;
-          } else {
-              totalCount += await collection.countDocuments({});
-          }
-        }
-        context = String(totalCount);
-      } else { // search_info or count_items with keywords
-        for (const collectionName of collectionsToQuery) {
-            const collection = db.collection(collectionName);
-            const docTypeForQuery = Object.keys(collectionMap).find(key => collectionMap[key as 'circular' | 'instruction' | 'regulation'] === collectionName) as 'circular' | 'instruction' | 'regulation';
-            const query = buildSearchQuery(keywords, docTypeForQuery);
-            
-            const collectionResults = await collection.find(query).toArray();
-            results = results.concat(collectionResults);
-        }
-
-        if (results.length === 0) {
-          return {
-            results: [],
-            answer: "No se encontraron documentos que coincidan con su búsqueda.",
-          };
-        }
-        context = JSON.stringify(results, null, 2);
+          const docTypeForQuery = Object.keys(collectionMap).find(key => collectionMap[key as 'circular' | 'instruction' | 'regulation'] === collectionName) as 'circular' | 'instruction' | 'regulation';
+          const query = buildSearchQuery(keywords, docTypeForQuery);
+          
+          const collectionResults = await collection.find(query).toArray();
+          results = results.concat(collectionResults);
       }
 
+      if (results.length === 0) {
+        return {
+          results: [],
+          answer: "No se encontraron documentos que coincidan con su búsqueda.",
+        };
+      }
+      
+      // Remove duplicates
+      const uniqueResults = results.filter((result, index, self) =>
+        index === self.findIndex((r) => (
+          r._id.toString() === result._id.toString()
+        ))
+      );
+
+      context = JSON.stringify(uniqueResults, null, 2);
+
       // Process results before sending them to the prompt or returning them
-      const processedResults = results.map(r => {
+      const processedResults = uniqueResults.map(r => {
         const result: any = { ...r, _id: r._id.toString() };
         
         Object.keys(result).forEach(key => {
