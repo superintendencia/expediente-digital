@@ -118,6 +118,7 @@ Based on the context, provide a comprehensive answer. Follow these rules:
 4.  **Provide the main regulation link.** If the 'documentType' is 'regulation' or the context mentions it, always include the link 'https://personal.justucuman.gov.ar/pdf/Reglamento%20de%20Expediente%20Digital.pdf' when relevant, using the anchor text "Ver reglamento completo".
 5.  **Handle long lists.** If you determine the list of documents in the context is too long to display fully, you MUST add a note at the end of your response, such as: "Se han encontrado más documentos que coinciden con su búsqueda. Puede ver la lista completa en la pestaña 'Documentos Fuente'." The total number of documents found is {{{resultsCount}}}. Use this to decide if you need to add the warning.
 6.  **Clarification on "Instructivos de Expediente Digital"**: When the user asks about these specific instructives (not instructives mentioned within a circular), note that their titles follow the format "I" + number (e.g., I141). The higher the number, the more recent the instructivo. Mention this if it helps clarify a user's question about the latest versions.
+7.  **Handle ambiguous queries.** If the search results are too broad or the user's question is ambiguous, ask for more details to narrow down the search. For example: "Su búsqueda arrojó muchos resultados. ¿Podría especificar el año o el tema que le interesa para poder darle una respuesta más precisa?".
 `,
 });
 
