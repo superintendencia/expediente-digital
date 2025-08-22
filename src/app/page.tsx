@@ -265,22 +265,27 @@ function SearchResults({ results }: { results: SearchDocumentsOutput['results'] 
         let title = 'Documento sin Título';
         let description = item.titulo || item.titulo_seccion || '';
 
-        if (item.tipo_normativa === 'circular' && item.numero) {
-          title = `Circular ${item.numero}`;
-        } else if (item.tipo_normativa === 'instructivo' && item.numero) {
-          title = `Instructivo ${item.numero}`;
+        // Check for 'numero' to identify circulares and instructivos
+        if (item.numero) {
+            // Heuristic to differentiate: circulares might have '/' in numero
+            if (String(item.numero).includes('/')) {
+                 title = `Circular ${item.numero}`;
+            } else {
+                 title = `Instructivo ${item.numero}`;
+            }
         } else if (item.articulos && item.articulos.length > 0 && item.articulos[0].numero_articulo) {
           title = `Artículo ${item.articulos[0].numero_articulo}`;
-          if (!description) {
+        } else if (item.titulo) {
+           title = item.titulo;
+        }
+
+        // The description can be used for the regulation or as a fallback
+        if (title.startsWith('Artículo')) {
             description = 'Reglamento de Expediente Digital';
-          }
+        } else if (item.titulo && title !== item.titulo) {
+            description = item.titulo;
         }
-        
-        // Final fallback if no specific title could be generated
-        if (title === 'Documento sin Título' && description) {
-            title = description;
-            description = '';
-        }
+
 
         return (
           <Card key={item._id} className="flex flex-col">
@@ -297,9 +302,9 @@ function SearchResults({ results }: { results: SearchDocumentsOutput['results'] 
               </div>
             </CardContent>
             <div className="p-6 pt-0">
-               {item.link_acceso && (
+               {item.link_de_acceso && (
                 <Button asChild variant="link" className="p-0 h-auto">
-                  <a href={item.link_acceso} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1">
+                  <a href={item.link_de_acceso} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1">
                     Ver Documento <ArrowRight className="h-4 w-4" />
                   </a>
                 </Button>
