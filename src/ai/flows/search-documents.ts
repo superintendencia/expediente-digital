@@ -219,6 +219,13 @@ const searchDocumentsFlow = ai.defineFlow(
         ))
       );
 
+      // Sanitize `palabras_clave` to be an array
+      uniqueResults.forEach(result => {
+        if (typeof result.palabras_clave === 'string') {
+          result.palabras_clave = result.palabras_clave.split(',').map((s: string) => s.trim());
+        }
+      });
+      
       context = JSON.stringify(uniqueResults, null, 2);
 
       // Process results before sending them to the prompt or returning them
