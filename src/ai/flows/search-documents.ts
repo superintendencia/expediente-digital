@@ -134,7 +134,7 @@ const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instru
     const documentTypesToQuery = documentType === 'all' ? ['circular', 'instruction', 'regulation'] : [documentType];
 
     if (documentTypesToQuery.includes('circular')) {
-        textSearchFields.push('resumen', 'titulo', 'tema', 'palabras_clave');
+        textSearchFields.push('tipo_normativa', 'numero', 'resumen', 'tema', 'palabras_clave');
     }
     if (documentTypesToQuery.includes('instruction')) {
         textSearchFields.push('resumen', 'titulo', 'palabras_clave');
