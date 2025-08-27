@@ -65,6 +65,7 @@ const IntentSchema = z.object({
     intent: z.enum(['search_info', 'count_items', 'unknown']).describe('The user intent.'),
     documentType: z.enum(['circular', 'instruction', 'regulation', 'all']).optional().describe('The type of document the user is asking about. "all" if not specified.'),
     keywords: z.array(z.string()).optional().describe('Keywords extracted for search_info or count_items intent'),
+    year: z.number().optional().describe('A year mentioned in the query, if any (e.g., 2023).'),
 });
 
 const extractIntentPrompt = ai.definePrompt({
@@ -75,6 +76,7 @@ const extractIntentPrompt = ai.definePrompt({
 The document types can be 'circular', 'instruction', or 'regulation'. If no specific type is mentioned, classify it as 'all'.
 If the user is asking a question to find information, the intent is 'search_info'. Extract the most relevant keywords.
 If the user is asking to count something (e.g., "how many articles", "cuántos instructivos"), the intent is 'count_items'. Also extract keywords if the count is conditioned (e.g., "cuántas circulares sobre superintendencia").
+If a year is mentioned (e.g., "del año 2023", "en 2022"), extract it into the 'year' field.
 If the intent is not clear, classify it as 'unknown'.
 
 Query: {{{query}}}`,
@@ -120,40 +122,68 @@ Based on the context, provide a comprehensive answer. Follow these rules:
 6.  **Clarification on "Instructivos de Expediente Digital"**: When the user asks about these specific instructives (not instructives mentioned within a circular), note that their titles follow the format "I" + number (e.g., I141). The higher the number, the more recent the instructivo. Mention this if it helps clarify a user's question about the latest versions.
 7.  **Handle ambiguous queries.** If the search results are too broad or the user's question is ambiguous, ask for more details to narrow down the search. For example: "Su búsqueda arrojó muchos resultados. ¿Podría especificar el año o el tema que le interesa para poder darle una respuesta más precisa?".
 8.  **Citing the Regulation:** The regulation is structured into sections ('titulo_seccion') which contain multiple articles ('articulos'). When citing the regulation, be as specific as possible. Mention the article number and, if possible, the section title for better context. For example: "El **artículo 25** de la sección **TÍTULO VII: COMUNICACIONES** del reglamento establece que...".
+9.  **Understanding Circular Numbers:** Be aware that the 'numero' field for circulares follows a 'number/year' format (e.g., "04/23" is circular number 4 from the year 2023). Use this understanding when interpreting and presenting information.
 `,
 });
 
-const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instruction' | 'regulation' | 'all') => {
-    if (!keywords || keywords.length === 0) return {};
+const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instruction' | 'regulation' | 'all', year?: number) => {
+    const mainConditions: any[] = [];
 
-    const queryRegexes = keywords.map(keyword => ({ $regex: keyword, $options: 'i' }));
-    
-    const orClauses: any[] = [];
+    // 1. Keyword search logic
+    if (keywords && keywords.length > 0) {
+        const queryRegexes = keywords.map(keyword => ({ $regex: keyword, $options: 'i' }));
+        const orClauses: any[] = [];
+        let textSearchFields: string[] = [];
+        const documentTypesToQuery = documentType === 'all' ? ['circular', 'instruction', 'regulation'] : [documentType];
 
-    let textSearchFields: string[] = [];
+        if (documentTypesToQuery.includes('circular')) {
+            textSearchFields.push('tipo_normativa', 'numero', 'resumen', 'tema', 'palabras_clave');
+        }
+        if (documentTypesToQuery.includes('instruction')) {
+            textSearchFields.push('titulo', 'resumen', 'palabras_clave', 'tipo_normativa');
+        }
+        if (documentTypesToQuery.includes('regulation')) {
+            textSearchFields.push('titulo_seccion', 'articulos.resumen_articulo', 'articulos.palabras_clave_articulo');
+        }
 
-    const documentTypesToQuery = documentType === 'all' ? ['circular', 'instruction', 'regulation'] : [documentType];
-
-    if (documentTypesToQuery.includes('circular')) {
-        textSearchFields.push('tipo_normativa', 'numero', 'resumen', 'tema', 'palabras_clave');
-    }
-    if (documentTypesToQuery.includes('instruction')) {
-        textSearchFields.push('titulo', 'resumen', 'palabras_clave', 'tipo_normativa');
-    }
-    if (documentTypesToQuery.includes('regulation')) {
-        textSearchFields.push('titulo_seccion', 'articulos.resumen_articulo', 'articulos.palabras_clave_articulo');
-    }
-
-    // Remove duplicates
-    textSearchFields = [...new Set(textSearchFields)];
-    
-    queryRegexes.forEach(regex => {
-        textSearchFields.forEach(field => {
-            orClauses.push({ [field]: regex });
+        textSearchFields = [...new Set(textSearchFields)];
+        queryRegexes.forEach(regex => {
+            textSearchFields.forEach(field => {
+                orClauses.push({ [field]: regex });
+            });
         });
-    });
+
+        if (orClauses.length > 0) {
+            mainConditions.push({ $or: orClauses });
+        }
+    }
+
+    // 2. Year search logic
+    if (year) {
+        const yearShort = year.toString().slice(-2); // e.g., 23
+        const yearLong = year.toString(); // e.g., 2023
+
+        const yearConditions: any[] = [
+            { fecha_expedicion: { $regex: `^${yearLong}`, $options: 'i' } }
+        ];
+
+        // Specific condition for circulares 'numero' field
+        if (documentType === 'circular' || documentType === 'all') {
+            yearConditions.push({ 
+                $and: [
+                    { tipo_normativa: "CIRCULAR" }, // Ensure it's a circular
+                    { numero: { $regex: `/${yearShort}$`, $options: 'i' } }
+                ]
+            });
+        }
+        
+        mainConditions.push({ $or: yearConditions });
+    }
     
-    return orClauses.length > 0 ? { $or: orClauses } : {};
+    // Combine conditions
+    if (mainConditions.length === 0) return {};
+    if (mainConditions.length === 1) return mainConditions[0];
+    return { $and: mainConditions };
 };
 
 
@@ -174,9 +204,9 @@ const searchDocumentsFlow = ai.defineFlow(
         };
     }
     
-    const { intent, documentType = 'all', keywords } = intentOutput;
+    const { intent, documentType = 'all', keywords, year } = intentOutput;
 
-    if (intent === 'unknown' || !keywords || keywords.length === 0) {
+    if (intent === 'unknown' || (!keywords || keywords.length === 0) && !year) {
       if (input.query.toLowerCase().includes('hola')) {
          return { results: [], answer: "¡Hola! Soy Digitalius, tu asistente de IA para la búsqueda de documentos. ¿En qué puedo ayudarte hoy?" };
       }
@@ -202,7 +232,7 @@ const searchDocumentsFlow = ai.defineFlow(
       for (const collectionName of collectionsToQuery) {
           const collection = db.collection(collectionName);
           const docTypeForQuery = Object.keys(collectionMap).find(key => collectionMap[key as 'circular' | 'instruction' | 'regulation'] === collectionName) as 'circular' | 'instruction' | 'regulation';
-          const query = buildSearchQuery(keywords, docTypeForQuery);
+          const query = buildSearchQuery(keywords || [], docTypeForQuery, year);
           
           const collectionResults = await collection.find(query).toArray();
           results = results.concat(collectionResults);
