@@ -123,6 +123,7 @@ Based on the context, provide a comprehensive answer. Follow these rules:
 7.  **Handle ambiguous queries.** If the search results are too broad or the user's question is ambiguous, ask for more details to narrow down the search. For example: "Su búsqueda arrojó muchos resultados. ¿Podría especificar el año o el tema que le interesa para poder darle una respuesta más precisa?".
 8.  **Citing the Regulation:** The regulation is structured into sections ('titulo_seccion') which contain multiple articles ('articulos'). When citing the regulation, be as specific as possible. Mention the article number and, if possible, the section title for better context. For example: "El **artículo 25** de la sección **TÍTULO VII: COMUNICACIONES** del reglamento establece que...".
 9.  **Understanding Circular Numbers:** Be aware that the 'numero' field for circulares follows a 'number/year' format (e.g., "04/23" is circular number 4 from the year 2023). Use this understanding when interpreting and presenting information.
+10. **Handle "How-To" Questions:** If the user query starts with "cómo" or is asking for instructions, and the most relevant result is an 'instructivo', you should provide a step-by-step guide based on the 'resumen' field of that 'instructivo'. Format the steps clearly using a numbered list.
 `,
 });
 
@@ -132,7 +133,7 @@ const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instru
     // 1. Keyword search logic
     if (keywords && keywords.length > 0) {
         const queryRegexes = keywords.map(keyword => ({ $regex: keyword, $options: 'i' }));
-        const orClauses: any[] = [];
+        let orClauses: any[] = [];
         let textSearchFields: string[] = [];
         const documentTypesToQuery = documentType === 'all' ? ['circular', 'instruction', 'regulation'] : [documentType];
 
