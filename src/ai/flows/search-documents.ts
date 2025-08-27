@@ -137,7 +137,7 @@ const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instru
         textSearchFields.push('tipo_normativa', 'numero', 'resumen', 'tema', 'palabras_clave');
     }
     if (documentTypesToQuery.includes('instruction')) {
-        textSearchFields.push('resumen', 'titulo', 'palabras_clave');
+        textSearchFields.push('titulo', 'resumen', 'palabras_clave', 'tipo_normativa');
     }
     if (documentTypesToQuery.includes('regulation')) {
         textSearchFields.push('titulo_seccion', 'articulos.resumen_articulo', 'articulos.palabras_clave_articulo');
