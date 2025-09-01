@@ -21,6 +21,12 @@ const SearchDocumentsInputSchema = z.object({
 });
 export type SearchDocumentsInput = z.infer<typeof SearchDocumentsInputSchema>;
 
+const EntidadAfectadaSchema = z.object({
+    nombre_entidad: z.string().optional(),
+    tipo: z.string().optional(),
+    tipo_entidad: z.string().optional(),
+});
+
 // Define the output schema
 const SearchDocumentsOutputSchema = z.object({
   results: z.array(
@@ -44,6 +50,7 @@ const SearchDocumentsOutputSchema = z.object({
           })
         )
         .optional(),
+        entidades_afectadas: z.array(EntidadAfectadaSchema).optional(),
     })
   ).describe('The search results from the database.'),
   answer: z.string().describe('The answer to the user query based on the search results.'),
@@ -124,6 +131,7 @@ Based on the context, provide a comprehensive answer. Follow these rules:
 8.  **Citing the Regulation:** The regulation is structured into sections ('titulo_seccion') which contain multiple articles ('articulos'). When citing the regulation, be as specific as possible. Mention the article number and, if possible, the section title for better context. For example: "El **artículo 25** de la sección **TÍTULO VII: COMUNICACIONES** del reglamento establece que...".
 9.  **Understanding Circular Numbers:** Be aware that the 'numero' field for circulares follows a 'number/year' format (e.g., "04/23" is circular number 4 from the year 2023). Use this understanding when interpreting and presenting information.
 10. **Handle "How-To" Questions:** If the user query starts with "cómo" or is asking for instructions, and the most relevant result is an 'instructivo', you should provide a step-by-step guide based on the 'resumen' field of that 'instructivo'. Format the steps clearly using a numbered list.
+11. **Handling Entities in Circulars:** If a circular contains information about 'entidades_afectadas', clearly state the entity's name, the type of change (ALTA, BAJA, MODIFICACION), and the type of entity in your response. This adds valuable context.
 `,
 });
 
@@ -133,12 +141,15 @@ const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instru
     // 1. Keyword search logic
     if (keywords && keywords.length > 0) {
         const queryRegexes = keywords.map(keyword => ({ $regex: keyword, $options: 'i' }));
-        let orClauses: any[] = [];
+        const orClauses: any[] = [];
         let textSearchFields: string[] = [];
         const documentTypesToQuery = documentType === 'all' ? ['circular', 'instruction', 'regulation'] : [documentType];
 
         if (documentTypesToQuery.includes('circular')) {
-            textSearchFields.push('tipo_normativa', 'numero', 'resumen', 'tema', 'palabras_clave');
+            textSearchFields.push(
+                'tipo_normativa', 'numero', 'resumen', 'tema', 'palabras_clave',
+                'entidades_afectadas.nombre_entidad', 'entidades_afectadas.tipo', 'entidades_afectadas.tipo_entidad'
+            );
         }
         if (documentTypesToQuery.includes('instruction')) {
             textSearchFields.push('titulo', 'resumen', 'palabras_clave', 'tipo_normativa');
@@ -147,9 +158,11 @@ const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instru
             textSearchFields.push('titulo_seccion', 'articulos.resumen_articulo', 'articulos.palabras_clave_articulo');
         }
 
-        textSearchFields = [...new Set(textSearchFields)];
+        // Using a Set to remove duplicate fields
+        const uniqueTextSearchFields = [...new Set(textSearchFields)];
+        
         queryRegexes.forEach(regex => {
-            textSearchFields.forEach(field => {
+            uniqueTextSearchFields.forEach(field => {
                 orClauses.push({ [field]: regex });
             });
         });
@@ -164,21 +177,22 @@ const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instru
         const yearShort = year.toString().slice(-2); // e.g., 23
         const yearLong = year.toString(); // e.g., 2023
 
-        const yearConditions: any[] = [
+        const yearOrConditions: any[] = [
             { fecha_expedicion: { $regex: `^${yearLong}`, $options: 'i' } }
         ];
 
-        // Specific condition for circulares 'numero' field
-        if (documentType === 'circular' || documentType === 'all') {
-            yearConditions.push({ 
+        // Specific condition for circulares 'numero' field, only applied if document type is circular or all
+        const documentTypesForYearQuery = documentType === 'all' ? ['circular', 'instruction', 'regulation'] : [documentType];
+        if (documentTypesForYearQuery.includes('circular')) {
+             yearOrConditions.push({ 
                 $and: [
-                    { tipo_normativa: "CIRCULAR" }, // Ensure it's a circular
+                    { tipo_normativa: { $regex: "CIRCULAR", $options: 'i' } },
                     { numero: { $regex: `/${yearShort}$`, $options: 'i' } }
                 ]
             });
         }
         
-        mainConditions.push({ $or: yearConditions });
+        mainConditions.push({ $or: yearOrConditions });
     }
     
     // Combine conditions
@@ -233,6 +247,8 @@ const searchDocumentsFlow = ai.defineFlow(
       for (const collectionName of collectionsToQuery) {
           const collection = db.collection(collectionName);
           const docTypeForQuery = Object.keys(collectionMap).find(key => collectionMap[key as 'circular' | 'instruction' | 'regulation'] === collectionName) as 'circular' | 'instruction' | 'regulation';
+          
+          // Build query only for the specific document type being queried
           const query = buildSearchQuery(keywords || [], docTypeForQuery, year);
           
           const collectionResults = await collection.find(query).toArray();
@@ -246,14 +262,14 @@ const searchDocumentsFlow = ai.defineFlow(
         };
       }
       
-      // Remove duplicates
+      // Remove duplicates based on _id
       const uniqueResults = results.filter((result, index, self) =>
         index === self.findIndex((r) => (
           r._id.toString() === result._id.toString()
         ))
       );
 
-      // Sanitize `palabras_clave` to be an array
+      // Sanitize `palabras_clave` to ensure it's an array
       uniqueResults.forEach(result => {
         if (typeof result.palabras_clave === 'string') {
           result.palabras_clave = result.palabras_clave.split(',').map((s: string) => s.trim());
