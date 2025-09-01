@@ -69,7 +69,7 @@ const collectionMap: Record<'circular' | 'instruction' | 'regulation', string> =
 };
 
 const IntentSchema = z.object({
-    intent: z.enum(['search_info', 'count_items', 'unknown']).describe('The user intent.'),
+    intent: z.enum(['search_info', 'count_items', 'search_latest', 'unknown']).describe('The user intent.'),
     documentType: z.enum(['circular', 'instruction', 'regulation', 'all']).optional().describe('The type of document the user is asking about. "all" if not specified.'),
     keywords: z.array(z.string()).optional().describe('Keywords extracted for search_info or count_items intent'),
     year: z.number().optional().describe('A year mentioned in the query, if any (e.g., 2023).'),
@@ -83,6 +83,7 @@ const extractIntentPrompt = ai.definePrompt({
 The document types can be 'circular', 'instruction', or 'regulation'. If no specific type is mentioned, classify it as 'all'.
 If the user is asking a question to find information, the intent is 'search_info'. Extract the most relevant keywords.
 If the user is asking to count something (e.g., "how many articles", "cuántos instructivos"), the intent is 'count_items'. Also extract keywords if the count is conditioned (e.g., "cuántas circulares sobre superintendencia").
+If the user is asking for the "latest" or "newest" document (e.g., "cuál es el último instructivo", "el instructivo más reciente"), the intent is 'search_latest' and the documentType should be 'instruction'.
 If a year is mentioned (e.g., "del año 2023", "en 2022"), extract it into the 'year' field.
 If the user is asking for a specific circular by its number (e.g., "circular 06/20"), extract the number "06/20" as a keyword.
 If the intent is not clear, classify it as 'unknown'.
@@ -97,7 +98,7 @@ const generateAnswerPrompt = ai.definePrompt({
       query: z.string(),
       documentType: z.string(),
       context: z.string(),
-      intent: z.enum(['search_info', 'count_items', 'unknown']),
+      intent: z.enum(['search_info', 'count_items', 'search_latest', 'unknown']),
       resultsCount: z.number().optional(),
     }),
   },
@@ -231,7 +232,7 @@ const searchDocumentsFlow = ai.defineFlow(
     
     const { intent, documentType = 'all', keywords, year } = intentOutput;
 
-    if (intent === 'unknown' || (!keywords || keywords.length === 0) && !year) {
+    if (intent === 'unknown' || (intent !== 'search_latest' && (!keywords || keywords.length === 0) && !year)) {
       if (input.query.toLowerCase().includes('hola')) {
          return { results: [], answer: "¡Hola! Soy Digitalius, tu asistente de IA para la búsqueda de documentos. ¿En qué puedo ayudarte hoy?" };
       }
@@ -248,21 +249,31 @@ const searchDocumentsFlow = ai.defineFlow(
       
       let context = "";
       let results: any[] = [];
-      const finalAnswerDocumentType = documentType;
+      let finalAnswerDocumentType = documentType;
 
-      const collectionsToQuery = documentType === 'all'
-        ? Object.values(collectionMap)
-        : [collectionMap[documentType as 'circular' | 'instruction' | 'regulation']];
-      
-      for (const collectionName of collectionsToQuery) {
-          const collection = db.collection(collectionName);
-          const docTypeForQuery = Object.keys(collectionMap).find(key => collectionMap[key as 'circular' | 'instruction' | 'regulation'] === collectionName) as 'circular' | 'instruction' | 'regulation';
-          
-          // Build query only for the specific document type being queried
-          const query = buildSearchQuery(keywords || [], docTypeForQuery, year);
-          
-          const collectionResults = await collection.find(query).toArray();
-          results = results.concat(collectionResults);
+      if (intent === 'search_latest' && documentType === 'instruction') {
+        const collection = db.collection(collectionMap.instruction);
+        const latestInstructivo = await collection.find({})
+          .sort({ numero: -1 })
+          .limit(1)
+          .toArray();
+        results = latestInstructivo;
+        finalAnswerDocumentType = 'instruction';
+      } else {
+        const collectionsToQuery = documentType === 'all'
+          ? Object.values(collectionMap)
+          : [collectionMap[documentType as 'circular' | 'instruction' | 'regulation']];
+        
+        for (const collectionName of collectionsToQuery) {
+            const collection = db.collection(collectionName);
+            const docTypeForQuery = Object.keys(collectionMap).find(key => collectionMap[key as 'circular' | 'instruction' | 'regulation'] === collectionName) as 'circular' | 'instruction' | 'regulation';
+            
+            // Build query only for the specific document type being queried
+            const query = buildSearchQuery(keywords || [], docTypeForQuery, year);
+            
+            const collectionResults = await collection.find(query).toArray();
+            results = results.concat(collectionResults);
+        }
       }
 
       if (results.length === 0) {
@@ -330,3 +341,5 @@ const searchDocumentsFlow = ai.defineFlow(
     }
   }
 );
+
+    
