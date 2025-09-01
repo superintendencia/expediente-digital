@@ -84,6 +84,7 @@ The document types can be 'circular', 'instruction', or 'regulation'. If no spec
 If the user is asking a question to find information, the intent is 'search_info'. Extract the most relevant keywords.
 If the user is asking to count something (e.g., "how many articles", "cuántos instructivos"), the intent is 'count_items'. Also extract keywords if the count is conditioned (e.g., "cuántas circulares sobre superintendencia").
 If a year is mentioned (e.g., "del año 2023", "en 2022"), extract it into the 'year' field.
+If the user is asking for a specific circular by its number (e.g., "circular 06/20"), extract the number "06/20" as a keyword.
 If the intent is not clear, classify it as 'unknown'.
 
 Query: {{{query}}}`,
@@ -130,13 +131,23 @@ Based on the context, provide a comprehensive answer. Follow these rules:
 7.  **Handle ambiguous queries.** If the search results are too broad or the user's question is ambiguous, ask for more details to narrow down the search. For example: "Su búsqueda arrojó muchos resultados. ¿Podría especificar el año o el tema que le interesa para poder darle una respuesta más precisa?".
 8.  **Citing the Regulation:** The regulation is structured into sections ('titulo_seccion') which contain multiple articles ('articulos'). When citing the regulation, be as specific as possible. Mention the article number and, if possible, the section title for better context. For example: "El **artículo 25** de la sección **TÍTULO VII: COMUNICACIONES** del reglamento establece que...".
 9.  **Understanding Circular Numbers:** Be aware that the 'numero' field for circulares follows a 'number/year' format (e.g., "04/23" is circular number 4 from the year 2023). Use this understanding when interpreting and presenting information.
-10. **Handle "How-To" Questions:** If the user query starts with "cómo" or is asking for instructions, and the most relevant result is an 'instructivo', you should provide a step-by-step guide based on the 'resumen' field of that 'instructivo'. Format the steps clearly using a numbered list.
+10. **Handling "How-To" Questions:** If the user query starts with "cómo" or is asking for instructions, and the most relevant result is an 'instructivo', you should provide a step-by-step guide based on the 'resumen' field of that 'instructivo'. Format the steps clearly using a numbered list.
 11. **Handling Entities in Circulars:** If a circular contains information about 'entidades_afectadas', clearly state the entity's name, the type of change (ALTA, BAJA, MODIFICACION), and the type of entity in your response. This adds valuable context.
 `,
 });
 
 const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instruction' | 'regulation' | 'all', year?: number) => {
     const andConditions: any[] = [];
+    const circularNumberRegex = /^\d{1,2}\/\d{2}$/;
+    const circularNumberKeyword = keywords.find(k => circularNumberRegex.test(k));
+
+    // High-precision search for a specific circular number
+    if (circularNumberKeyword && (documentType === 'circular' || documentType === 'all')) {
+        return {
+            tipo_normativa: { $regex: "CIRCULAR", $options: 'i' },
+            numero: circularNumberKeyword
+        };
+    }
 
     // 1. Keyword search logic
     if (keywords && keywords.length > 0) {
