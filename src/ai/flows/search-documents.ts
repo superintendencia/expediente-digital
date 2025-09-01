@@ -253,11 +253,24 @@ const searchDocumentsFlow = ai.defineFlow(
 
       if (intent === 'search_latest' && documentType === 'instruction') {
         const collection = db.collection(collectionMap.instruction);
-        const latestInstructivo = await collection.find({})
-          .sort({ titulo: -1 })
-          .limit(1)
-          .toArray();
-        results = latestInstructivo;
+        const allInstructivos = await collection.find({}).toArray();
+
+        // Sort in code to handle alphanumeric sorting correctly (e.g., I141 > I99)
+        if (allInstructivos.length > 0) {
+            const getNumber = (title: string) => {
+                const match = title.match(/^[IE](\d+)/);
+                return match ? parseInt(match[1], 10) : 0;
+            };
+
+            allInstructivos.sort((a, b) => {
+                const numA = getNumber(a.titulo || '');
+                const numB = getNumber(b.titulo || '');
+                return numB - numA;
+            });
+            
+            results = [allInstructivos[0]]; // Get the latest one
+        }
+
         finalAnswerDocumentType = 'instruction';
       } else {
         const collectionsToQuery = documentType === 'all'
