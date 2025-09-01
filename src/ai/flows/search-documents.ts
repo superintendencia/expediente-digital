@@ -73,6 +73,7 @@ const IntentSchema = z.object({
     documentType: z.enum(['circular', 'instruction', 'regulation', 'all']).optional().describe('The type of document the user is asking about. "all" if not specified.'),
     keywords: z.array(z.string()).optional().describe('Keywords extracted for search_info or count_items intent'),
     year: z.number().optional().describe('A year mentioned in the query, if any (e.g., 2023).'),
+    instructivoType: z.enum(['interno', 'externo', 'ambos']).optional().describe('For search_latest intent on instructions, specifies if the user wants "interno", "externo" or both.'),
 });
 
 const extractIntentPrompt = ai.definePrompt({
@@ -83,7 +84,7 @@ const extractIntentPrompt = ai.definePrompt({
 The document types can be 'circular', 'instruction', or 'regulation'. If no specific type is mentioned, classify it as 'all'.
 If the user is asking a question to find information, the intent is 'search_info'. Extract the most relevant keywords.
 If the user is asking to count something (e.g., "how many articles", "cuántos instructivos"), the intent is 'count_items'. Also extract keywords if the count is conditioned (e.g., "cuántas circulares sobre superintendencia").
-If the user is asking for the "latest" or "newest" document (e.g., "cuál es el último instructivo", "el instructivo más reciente"), the intent is 'search_latest' and the documentType should be 'instruction'.
+If the user is asking for the "latest" or "newest" document (e.g., "cuál es el último instructivo", "el instructivo más reciente"), the intent is 'search_latest' and the documentType should be 'instruction'. For this intent, also determine if they are asking for "interno", "externo" or both (if not specified, it's "ambos").
 If a year is mentioned (e.g., "del año 2023", "en 2022"), extract it into the 'year' field.
 If the user is asking for a specific circular by its number (e.g., "circular 06/20"), extract the number "06/20" as a keyword.
 If the intent is not clear, classify it as 'unknown'.
@@ -230,7 +231,7 @@ const searchDocumentsFlow = ai.defineFlow(
         };
     }
     
-    const { intent, documentType = 'all', keywords, year } = intentOutput;
+    const { intent, documentType = 'all', keywords, year, instructivoType } = intentOutput;
 
     if (intent === 'unknown' || (intent !== 'search_latest' && (!keywords || keywords.length === 0) && !year)) {
       if (input.query.toLowerCase().includes('hola')) {
@@ -253,22 +254,31 @@ const searchDocumentsFlow = ai.defineFlow(
 
       if (intent === 'search_latest' && documentType === 'instruction') {
         const collection = db.collection(collectionMap.instruction);
-        const allInstructivos = await collection.find({}).toArray();
+        
+        const getNumber = (title: string) => {
+            const match = title.match(/^[IE](\d+)/);
+            return match ? parseInt(match[1], 10) : 0;
+        };
 
-        // Sort in code to handle alphanumeric sorting correctly (e.g., I141 > I99)
-        if (allInstructivos.length > 0) {
-            const getNumber = (title: string) => {
-                const match = title.match(/^[IE](\d+)/);
-                return match ? parseInt(match[1], 10) : 0;
-            };
+        const findLatest = async (type: 'I' | 'E') => {
+            const instructivos = await collection.find({ titulo: { $regex: `^${type}` } }).toArray();
+            if (instructivos.length === 0) return null;
 
-            allInstructivos.sort((a, b) => {
-                const numA = getNumber(a.titulo || '');
-                const numB = getNumber(b.titulo || '');
-                return numB - numA;
-            });
-            
-            results = [allInstructivos[0]]; // Get the latest one
+            instructivos.sort((a, b) => getNumber(b.titulo || '') - getNumber(a.titulo || ''));
+            return instructivos[0];
+        };
+
+        if (instructivoType === 'interno') {
+            const latest = await findLatest('I');
+            if (latest) results.push(latest);
+        } else if (instructivoType === 'externo') {
+            const latest = await findLatest('E');
+            if (latest) results.push(latest);
+        } else { // 'ambos' or undefined
+            const latestI = await findLatest('I');
+            const latestE = await findLatest('E');
+            if (latestI) results.push(latestI);
+            if (latestE) results.push(latestE);
         }
 
         finalAnswerDocumentType = 'instruction';
@@ -354,7 +364,3 @@ const searchDocumentsFlow = ai.defineFlow(
     }
   }
 );
-
-    
-
-    
