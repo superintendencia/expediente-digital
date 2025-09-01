@@ -136,40 +136,40 @@ Based on the context, provide a comprehensive answer. Follow these rules:
 });
 
 const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instruction' | 'regulation' | 'all', year?: number) => {
-    const mainConditions: any[] = [];
+    const andConditions: any[] = [];
 
     // 1. Keyword search logic
     if (keywords && keywords.length > 0) {
-        const queryRegexes = keywords.map(keyword => ({ $regex: keyword, $options: 'i' }));
-        const orClauses: any[] = [];
-        let textSearchFields: string[] = [];
-        const documentTypesToQuery = documentType === 'all' ? ['circular', 'instruction', 'regulation'] : [documentType];
+        keywords.forEach(keyword => {
+            const regex = { $regex: keyword, $options: 'i' };
+            const orClausesForKeyword: any[] = [];
+            
+            let textSearchFields: string[] = [];
+            const documentTypesToQuery = documentType === 'all' ? ['circular', 'instruction', 'regulation'] : [documentType];
 
-        if (documentTypesToQuery.includes('circular')) {
-            textSearchFields.push(
-                'tipo_normativa', 'numero', 'resumen', 'tema', 'palabras_clave',
-                'entidades_afectadas.nombre_entidad', 'entidades_afectadas.tipo', 'entidades_afectadas.tipo_entidad'
-            );
-        }
-        if (documentTypesToQuery.includes('instruction')) {
-            textSearchFields.push('titulo', 'resumen', 'palabras_clave', 'tipo_normativa');
-        }
-        if (documentTypesToQuery.includes('regulation')) {
-            textSearchFields.push('titulo_seccion', 'articulos.resumen_articulo', 'articulos.palabras_clave_articulo');
-        }
+            if (documentTypesToQuery.includes('circular')) {
+                textSearchFields.push(
+                    'tipo_normativa', 'numero', 'resumen', 'tema', 'palabras_clave',
+                    'entidades_afectadas.nombre_entidad', 'entidades_afectadas.tipo', 'entidades_afectadas.tipo_entidad'
+                );
+            }
+            if (documentTypesToQuery.includes('instruction')) {
+                textSearchFields.push('titulo', 'resumen', 'palabras_clave', 'tipo_normativa');
+            }
+            if (documentTypesToQuery.includes('regulation')) {
+                textSearchFields.push('titulo_seccion', 'articulos.resumen_articulo', 'articulos.palabras_clave_articulo');
+            }
+            
+            const uniqueTextSearchFields = [...new Set(textSearchFields)];
 
-        // Using a Set to remove duplicate fields
-        const uniqueTextSearchFields = [...new Set(textSearchFields)];
-        
-        queryRegexes.forEach(regex => {
             uniqueTextSearchFields.forEach(field => {
-                orClauses.push({ [field]: regex });
+                orClausesForKeyword.push({ [field]: regex });
             });
+            
+            if (orClausesForKeyword.length > 0) {
+                andConditions.push({ $or: orClausesForKeyword });
+            }
         });
-
-        if (orClauses.length > 0) {
-            mainConditions.push({ $or: orClauses });
-        }
     }
 
     // 2. Year search logic
@@ -181,8 +181,7 @@ const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instru
             { fecha_expedicion: { $regex: `^${yearLong}`, $options: 'i' } }
         ];
 
-        // Specific condition for circulares 'numero' field, only applied if document type is circular or all
-        const documentTypesForYearQuery = documentType === 'all' ? ['circular', 'instruction', 'regulation'] : [documentType];
+        const documentTypesForYearQuery = documentType === 'all' ? ['circular'] : (documentType === 'circular' ? ['circular'] : []);
         if (documentTypesForYearQuery.includes('circular')) {
              yearOrConditions.push({ 
                 $and: [
@@ -192,13 +191,13 @@ const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instru
             });
         }
         
-        mainConditions.push({ $or: yearOrConditions });
+        andConditions.push({ $or: yearOrConditions });
     }
     
-    // Combine conditions
-    if (mainConditions.length === 0) return {};
-    if (mainConditions.length === 1) return mainConditions[0];
-    return { $and: mainConditions };
+    // Combine all "AND" conditions
+    if (andConditions.length === 0) return {};
+    if (andConditions.length === 1) return andConditions[0];
+    return { $and: andConditions };
 };
 
 
