@@ -254,7 +254,7 @@ const searchDocumentsFlow = ai.defineFlow(
       if (intent === 'search_latest' && documentType === 'instruction') {
         const collection = db.collection(collectionMap.instruction);
         const latestInstructivo = await collection.find({})
-          .sort({ numero: -1 })
+          .sort({ titulo: -1 })
           .limit(1)
           .toArray();
         results = latestInstructivo;
@@ -341,5 +341,7 @@ const searchDocumentsFlow = ai.defineFlow(
     }
   }
 );
+
+    
 
     
