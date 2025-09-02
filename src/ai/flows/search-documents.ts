@@ -73,7 +73,7 @@ const IntentSchema = z.object({
     documentType: z.enum(['circular', 'instruction', 'regulation', 'all']).optional().describe('The type of document the user is asking about. "all" if not specified.'),
     keywords: z.array(z.string()).optional().describe('Keywords extracted for search_info or count_items intent'),
     year: z.number().optional().describe('A year mentioned in the query, if any (e.g., 2023).'),
-    instructivoType: z.enum(['interno', 'externo', 'ambos']).optional().describe('For search_latest intent on instructions, specifies if the user wants "interno", "externo" or both.'),
+    instructivoType: z.enum(['interno', 'externo', 'ambos']).optional().describe('For search_latest intent on instructions, specifies if the user wants "interno", "externo" or both (if not specified, it\'s "ambos").'),
 });
 
 const extractIntentPrompt = ai.definePrompt({
@@ -139,7 +139,7 @@ Based on the context, provide a comprehensive answer. Follow these rules:
 });
 
 const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instruction' | 'regulation' | 'all', year?: number) => {
-    const andConditions: any[] = [];
+    const finalConditions: any[] = [];
     const circularNumberRegex = /^\d{1,2}\/\d{2}$/;
     const circularNumberKeyword = keywords.find(k => circularNumberRegex.test(k));
 
@@ -151,11 +151,11 @@ const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instru
         };
     }
 
+    const keywordOrConditions: any[] = [];
     // 1. Keyword search logic
     if (keywords && keywords.length > 0) {
         keywords.forEach(keyword => {
             const regex = { $regex: keyword, $options: 'i' };
-            const orClausesForKeyword: any[] = [];
             
             let textSearchFields: string[] = [];
             const documentTypesToQuery = documentType === 'all' ? ['circular', 'instruction', 'regulation'] : [documentType];
@@ -176,13 +176,13 @@ const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instru
             const uniqueTextSearchFields = [...new Set(textSearchFields)];
 
             uniqueTextSearchFields.forEach(field => {
-                orClausesForKeyword.push({ [field]: regex });
+                keywordOrConditions.push({ [field]: regex });
             });
-            
-            if (orClausesForKeyword.length > 0) {
-                andConditions.push({ $or: orClausesForKeyword });
-            }
         });
+    }
+
+    if(keywordOrConditions.length > 0) {
+        finalConditions.push({ $or: keywordOrConditions });
     }
 
     // 2. Year search logic
@@ -204,13 +204,13 @@ const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instru
             });
         }
         
-        andConditions.push({ $or: yearOrConditions });
+        finalConditions.push({ $or: yearOrConditions });
     }
     
     // Combine all "AND" conditions
-    if (andConditions.length === 0) return {};
-    if (andConditions.length === 1) return andConditions[0];
-    return { $and: andConditions };
+    if (finalConditions.length === 0) return {};
+    if (finalConditions.length === 1) return finalConditions[0];
+    return { $and: finalConditions };
 };
 
 
