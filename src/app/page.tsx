@@ -318,7 +318,10 @@ function SearchResults({ results }: { results: SearchDocumentsOutput['results'] 
 }
 
 export default function HomePage() {
-  const [dbSettings, setDbSettings] = useState<DBSettings>({ uri: 'mongodb+srv://superintendenciapjt:SKINHEAD2006@superintendencias.anag72y.mongodb.net/?retryWrites=true&w=majority&appName=SuperintendencIAs', dbName: 'asistentes-expediente-digital' });
+  const [dbSettings, setDbSettings] = useState<DBSettings>({ 
+    uri: process.env.MONGODB_URI || '', 
+    dbName: process.env.MONGODB_DATABASE_NAME || '' 
+  });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const initialState: SearchState = {};
   const [state, formAction] = useActionState(handleSearch, initialState);
