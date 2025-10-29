@@ -18,10 +18,6 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  env: {
-    MONGODB_URI: process.env.MONGODB_URI,
-    MONGODB_DATABASE_NAME: process.env.MONGODB_DATABASE_NAME,
-  }
 };
 
 export default nextConfig;
