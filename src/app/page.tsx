@@ -75,7 +75,6 @@ const MemoizedAIAnswer = React.memo(function AIAnswer({ answer }: { answer: stri
                     standaloneUrl,
                 ] = match;
                 
-                // Prioritize explicit markdown links `[text](url)`
                 if (boldLinkText && boldLinkUrl && (boldLinkUrl.startsWith('http://') || boldLinkUrl.startsWith('https://'))) {
                     results.push(
                         <strong key={lastIndex}>
