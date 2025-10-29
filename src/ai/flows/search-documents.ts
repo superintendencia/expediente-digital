@@ -11,13 +11,13 @@
 
 import {ai} from '@/ai/genkit';
 import {z} from 'zod';
-import {MongoClient, Db} from 'mongodb';
+import { getDb } from '@/lib/mongodb';
+import type { Db } from 'mongodb';
+
 
 // Define the input schema
 const SearchDocumentsInputSchema = z.object({
   query: z.string().describe('The user query to search for documents.'),
-  mongodbUri: z.string().describe('The MongoDB connection URI (server-side only).'),
-  mongodbDatabaseName: z.string().describe('The name of the MongoDB database (server-side only).'),
 });
 export type SearchDocumentsInput = z.infer<typeof SearchDocumentsInputSchema>;
 
@@ -209,8 +209,20 @@ const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instru
     
     // Combine all "AND" conditions
     if (finalConditions.length === 0) return {};
+    // Use $or for keywords and $and for year and other filters.
+    if (keywordOrConditions.length > 0 && finalConditions.length > 1) {
+        // If we have keywords and other conditions, wrap keywords in an $or and combine with other conditions using $and
+        return {
+            $and: [
+                { $or: keywordOrConditions },
+                ...finalConditions.slice(1)
+            ]
+        };
+    }
+    
     if (finalConditions.length === 1) return finalConditions[0];
-    return { $and: finalConditions };
+    if (finalConditions.length > 1) return { $and: finalConditions };
+    return {};
 };
 
 
@@ -243,10 +255,7 @@ const searchDocumentsFlow = ai.defineFlow(
       };
     }
     
-    const client = new MongoClient(input.mongodbUri);
-    try {
-      await client.connect();
-      const db: Db = client.db(input.mongodbDatabaseName);
+    const db: Db = await getDb();
       
       let context = "";
       let results: any[] = [];
@@ -359,8 +368,6 @@ const searchDocumentsFlow = ai.defineFlow(
         results: processedResults,
         answer: output?.answer || "No pude generar una respuesta basada en los documentos proporcionados.",
       };
-    } finally {
-      await client.close();
-    }
+    
   }
 );

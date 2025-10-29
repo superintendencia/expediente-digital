@@ -31,20 +31,9 @@ export async function handleSearch(
 
   const { query } = parsed.data;
 
-  // Database credentials are now read from server-side environment variables.
-  const mongodbUri = process.env.MONGODB_URI;
-  const mongodbDatabaseName = process.env.MONGODB_DATABASE_NAME;
-
-  if (!mongodbUri || !mongodbDatabaseName) {
-    console.error('Las variables de entorno de MongoDB no están configuradas en el servidor.');
-    return { error: 'La configuración del servidor está incompleta. Por favor, contacta al administrador.' };
-  }
-
   try {
     const result = await searchDocuments({
       query,
-      mongodbUri,
-      mongodbDatabaseName,
     });
     return { data: result };
   } catch (e: any) {
