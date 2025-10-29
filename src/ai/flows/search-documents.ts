@@ -16,8 +16,8 @@ import {MongoClient, Db} from 'mongodb';
 // Define the input schema
 const SearchDocumentsInputSchema = z.object({
   query: z.string().describe('The user query to search for documents.'),
-  mongodbUri: z.string().describe('The MongoDB connection URI.'),
-  mongodbDatabaseName: z.string().describe('The name of the MongoDB database.'),
+  mongodbUri: z.string().describe('The MongoDB connection URI (server-side only).'),
+  mongodbDatabaseName: z.string().describe('The name of the MongoDB database (server-side only).'),
 });
 export type SearchDocumentsInput = z.infer<typeof SearchDocumentsInputSchema>;
 

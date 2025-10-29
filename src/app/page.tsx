@@ -3,11 +3,10 @@
 
 import React, { useEffect, useState, useMemo, useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { Bot, Cog, FileText, Info, Loader2, Search, Send, ArrowRight } from 'lucide-react';
+import { Bot, FileText, Info, Loader2, Search, Send, ArrowRight } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarInset, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from '@/components/ui/sidebar';
@@ -17,11 +16,6 @@ import { useToast } from '@/hooks/use-toast';
 import { handleSearch, type SearchState } from './actions';
 import type { SearchDocumentsOutput } from '@/ai/flows/search-documents';
 import { Textarea } from '@/components/ui/textarea';
-
-type DBSettings = {
-  uri: string;
-  dbName: string;
-};
 
 function DigitaliusLogo({ className }: { className?: string }) {
   return (
@@ -54,71 +48,6 @@ function SubmitButton() {
       {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
       Buscar
     </Button>
-  );
-}
-
-function SettingsDialog({
-  isOpen,
-  onOpenChange,
-  onSave,
-  initialSettings,
-}: {
-  isOpen: boolean;
-  onOpenChange: (isOpen: boolean) => void;
-  onSave: (settings: DBSettings) => void;
-  initialSettings: DBSettings;
-}) {
-  const [settings, setSettings] = useState<DBSettings>(initialSettings);
-
-  useEffect(() => {
-    setSettings(initialSettings);
-  }, [initialSettings]);
-
-  const handleSaveClick = () => {
-    onSave(settings);
-    onOpenChange(false);
-  };
-
-  return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle>Configuración de la Base de Datos</DialogTitle>
-          <DialogDescription>
-            Introduce los detalles de conexión de tu MongoDB Atlas. Se guardarán localmente en tu navegador.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="mongodb-uri" className="text-right">
-              URI de MongoDB
-            </Label>
-            <Input
-              id="mongodb-uri"
-              value={settings.uri}
-              onChange={(e) => setSettings({ ...settings, uri: e.target.value })}
-              className="col-span-3"
-              placeholder="mongodb+srv://..."
-            />
-          </div>
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="db-name" className="text-right">
-              Nombre de la BD
-            </Label>
-            <Input
-              id="db-name"
-              value={settings.dbName}
-              onChange={(e) => setSettings({ ...settings, dbName: e.target.value })}
-              className="col-span-3"
-              placeholder="asistentes-expediente-digital"
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button onClick={handleSaveClick}>Guardar Cambios</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -318,30 +247,11 @@ function SearchResults({ results }: { results: SearchDocumentsOutput['results'] 
 }
 
 export default function HomePage() {
-  const [dbSettings, setDbSettings] = useState<DBSettings>({ 
-    uri: process.env.MONGODB_URI || '', 
-    dbName: process.env.MONGODB_DATABASE_NAME || '' 
-  });
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const initialState: SearchState = {};
   const [state, formAction] = useActionState(handleSearch, initialState);
   const { toast } = useToast();
   const { pending } = useFormStatus();
   const formRef = React.useRef<HTMLFormElement>(null);
-
-  useEffect(() => {
-    try {
-      const savedSettings = localStorage.getItem('digitaliusDbSettings');
-      if (savedSettings) {
-        const parsedSettings = JSON.parse(savedSettings);
-        if (parsedSettings.uri && parsedSettings.dbName) {
-            setDbSettings(parsedSettings);
-        }
-      }
-    } catch (error) {
-      console.error('No se pudo cargar la configuración desde localStorage', error);
-    }
-  }, []);
 
   useEffect(() => {
     if (state.error) {
@@ -352,24 +262,6 @@ export default function HomePage() {
       });
     }
   }, [state.error, toast]);
-
-  const handleSaveSettings = (settings: DBSettings) => {
-    setDbSettings(settings);
-    try {
-      localStorage.setItem('digitaliusDbSettings', JSON.stringify(settings));
-      toast({
-        title: 'Configuración Guardada',
-        description: 'La configuración de tu base de datos ha sido guardada localmente.',
-      });
-    } catch (error) {
-      console.error('No se pudo guardar la configuración en localStorage', error);
-      toast({
-        variant: 'destructive',
-        title: 'Error al guardar la configuración',
-        description: 'No se pudo guardar la configuración en el almacenamiento local de tu navegador.',
-      });
-    }
-  };
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (
@@ -408,10 +300,6 @@ export default function HomePage() {
         <SidebarInset className="flex flex-col">
           <header className="sticky top-0 z-10 flex h-14 items-center justify-between gap-4 border-b bg-background/80 px-4 backdrop-blur-sm sm:px-6">
             <h2 className="text-xl font-semibold">Búsqueda Inteligente de Documentos</h2>
-            <Button variant="ghost" size="icon" onClick={() => setIsSettingsOpen(true)}>
-              <Cog />
-              <span className="sr-only">Configuración</span>
-            </Button>
           </header>
 
           <main className="flex-1 overflow-y-auto p-4 sm:p-6">
@@ -423,9 +311,6 @@ export default function HomePage() {
                     <CardDescription>Introduce tu consulta para buscar en todos los documentos.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <input type="hidden" name="mongodbUri" value={dbSettings.uri} />
-                    <input type="hidden" name="mongodbDatabaseName" value={dbSettings.dbName} />
-
                     <div>
                       <Label htmlFor="query">Tu Consulta</Label>
                       <Textarea
@@ -487,12 +372,6 @@ export default function HomePage() {
           </main>
         </SidebarInset>
       </div>
-      <SettingsDialog
-        isOpen={isSettingsOpen}
-        onOpenChange={setIsSettingsOpen}
-        onSave={handleSaveSettings}
-        initialSettings={dbSettings}
-      />
     </SidebarProvider>
   );
 }
