@@ -75,7 +75,8 @@ const MemoizedAIAnswer = React.memo(function AIAnswer({ answer }: { answer: stri
                     standaloneUrl,
                 ] = match;
                 
-                if (boldLinkText && boldLinkUrl) {
+                // Prioritize explicit markdown links `[text](url)`
+                if (boldLinkText && boldLinkUrl && (boldLinkUrl.startsWith('http://') || boldLinkUrl.startsWith('https://'))) {
                     results.push(
                         <strong key={lastIndex}>
                             <a
@@ -90,7 +91,7 @@ const MemoizedAIAnswer = React.memo(function AIAnswer({ answer }: { answer: stri
                     );
                 } else if (boldText) {
                     results.push(<strong key={lastIndex}>{boldText}</strong>);
-                } else if (linkText && linkUrl) {
+                } else if (linkText && linkUrl && (linkUrl.startsWith('http://') || linkUrl.startsWith('https://'))) {
                     results.push(
                         <a
                             key={lastIndex}
@@ -102,7 +103,7 @@ const MemoizedAIAnswer = React.memo(function AIAnswer({ answer }: { answer: stri
                             {linkText}
                         </a>
                     );
-                } else if (standaloneUrl) {
+                } else if (standaloneUrl && (standaloneUrl.startsWith('http://') || standaloneUrl.startsWith('https://'))) {
                      results.push(
                         <a
                             key={lastIndex}
@@ -135,8 +136,8 @@ const MemoizedAIAnswer = React.memo(function AIAnswer({ answer }: { answer: stri
 
         lines.forEach((line, index) => {
             const trimmedLine = line.trim();
-            if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ')) {
-                listItems.push(trimmedLine.substring(2));
+            if (trimmedLine.startsWith('* ') || trimmedLine.startsWith('- ') || /^\d+\.\s/.test(trimmedLine)) {
+                listItems.push(trimmedLine.replace(/^(\* |-\s|\d+\.\s)/, ''));
             } else {
                 if (listItems.length > 0) {
                     elements.push(
