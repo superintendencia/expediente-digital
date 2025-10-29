@@ -38,15 +38,12 @@ if (process.env.NODE_ENV === 'development') {
   clientPromise = client.connect();
 }
 
-
 let cachedDb: Db | null = null;
 
 export async function getDb(): Promise<Db> {
-    if (cachedDb) {
-        return cachedDb;
-    }
+    // Vercel's behavior with cached connections can be inconsistent.
+    // This simplified approach is often more reliable.
     const client = await clientPromise;
     const db = client.db(MONGODB_DATABASE_NAME);
-    cachedDb = db;
     return db;
 }

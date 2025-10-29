@@ -1,23 +1,31 @@
 'use server';
 
 /**
- * @fileOverview This file defines a Genkit flow for searching documents (circulars, instructions, and regulations)
- * in a MongoDB Atlas database based on keywords and then analyzing and responding to user queries.
+ * @fileOverview This file defines a Genkit flow for analyzing and responding to user queries
+ * based on a provided context of documents. The database access is handled separately.
  *
- * - searchDocuments - A function that handles the document search process.
+ * - searchDocuments - A function that handles the document analysis process.
  * - SearchDocumentsInput - The input type for the searchDocuments function.
  * - SearchDocumentsOutput - The return type for the searchDocuments function.
  */
 
 import {ai} from '@/ai/genkit';
 import {z} from 'zod';
-import { getDb } from '@/lib/mongodb';
-import type { Db } from 'mongodb';
 
+const IntentSchema = z.object({
+    intent: z.enum(['search_info', 'count_items', 'search_latest', 'unknown']).describe('The user intent.'),
+    documentType: z.enum(['circular', 'instruction', 'regulation', 'all']).optional().describe('The type of document the user is asking about. "all" if not specified.'),
+    keywords: z.array(z.string()).optional().describe('Keywords extracted for search_info or count_items intent'),
+    year: z.number().optional().describe('A year mentioned in the query, if any (e.g., 2023).'),
+    instructivoType: z.enum(['interno', 'externo', 'ambos']).optional().describe('For search_latest intent on instructions, specifies if the user wants "interno", "externo" or both (if not specified, it\'s "ambos").'),
+});
 
 // Define the input schema
 const SearchDocumentsInputSchema = z.object({
   query: z.string().describe('The user query to search for documents.'),
+  context: z.string().optional().describe('JSON string of documents from the database.'),
+  intentAnalysis: IntentSchema.optional().describe('Pre-computed intent analysis.'),
+  dbResults: z.array(z.any()).optional().describe('Raw results from the database to be passed through to the client.'),
 });
 export type SearchDocumentsInput = z.infer<typeof SearchDocumentsInputSchema>;
 
@@ -52,8 +60,10 @@ const SearchDocumentsOutputSchema = z.object({
         .optional(),
         entidades_afectadas: z.array(EntidadAfectadaSchema).optional(),
     })
-  ).describe('The search results from the database.'),
+  ).describe('The search results from the database.').optional(),
   answer: z.string().describe('The answer to the user query based on the search results.'),
+  requiresContext: z.boolean().optional().describe('If true, the caller needs to fetch context and call again.'),
+  intentAnalysis: IntentSchema.optional().describe('The result of the intent analysis.'),
 });
 export type SearchDocumentsOutput = z.infer<typeof SearchDocumentsOutputSchema>;
 
@@ -61,20 +71,6 @@ export type SearchDocumentsOutput = z.infer<typeof SearchDocumentsOutputSchema>;
 export async function searchDocuments(input: SearchDocumentsInput): Promise<SearchDocumentsOutput> {
   return searchDocumentsFlow(input);
 }
-
-const collectionMap: Record<'circular' | 'instruction' | 'regulation', string> = {
-  circular: 'circulares',
-  instruction: 'instructivos',
-  regulation: 'reglamentos',
-};
-
-const IntentSchema = z.object({
-    intent: z.enum(['search_info', 'count_items', 'search_latest', 'unknown']).describe('The user intent.'),
-    documentType: z.enum(['circular', 'instruction', 'regulation', 'all']).optional().describe('The type of document the user is asking about. "all" if not specified.'),
-    keywords: z.array(z.string()).optional().describe('Keywords extracted for search_info or count_items intent'),
-    year: z.number().optional().describe('A year mentioned in the query, if any (e.g., 2023).'),
-    instructivoType: z.enum(['interno', 'externo', 'ambos']).optional().describe('For search_latest intent on instructions, specifies if the user wants "interno", "externo" or both (if not specified, it\'s "ambos").'),
-});
 
 const extractIntentPrompt = ai.definePrompt({
   name: 'extractIntentPrompt',
@@ -138,83 +134,6 @@ Based on the context, provide a comprehensive answer. Follow these rules:
 `,
 });
 
-const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instruction' | 'regulation' | 'all', year?: number) => {
-    const finalConditions: any[] = [];
-    const circularNumberRegex = /^\d{1,2}\/\d{2}$/;
-    const circularNumberKeyword = keywords.find(k => circularNumberRegex.test(k));
-
-    // High-precision search for a specific circular number
-    if (circularNumberKeyword && (documentType === 'circular' || documentType === 'all')) {
-        return {
-            tipo_normativa: { $regex: "CIRCULAR", $options: 'i' },
-            numero: circularNumberKeyword
-        };
-    }
-
-    const keywordOrConditions: any[] = [];
-    // 1. Keyword search logic
-    if (keywords && keywords.length > 0) {
-        keywords.forEach(keyword => {
-            const regex = { $regex: keyword, $options: 'i' };
-            
-            let textSearchFields: string[] = [];
-            const documentTypesToQuery = documentType === 'all' ? ['circular', 'instruction', 'regulation'] : [documentType];
-
-            if (documentTypesToQuery.includes('circular')) {
-                textSearchFields.push(
-                    'tipo_normativa', 'numero', 'resumen', 'tema', 'palabras_clave',
-                    'entidades_afectadas.nombre_entidad', 'entidades_afectadas.tipo', 'entidades_afectadas.tipo_entidad'
-                );
-            }
-            if (documentTypesToQuery.includes('instruction')) {
-                textSearchFields.push('titulo', 'resumen', 'palabras_clave', 'tipo_normativa');
-            }
-            if (documentTypesToQuery.includes('regulation')) {
-                textSearchFields.push('titulo_seccion', 'articulos.resumen_articulo', 'articulos.palabras_clave_articulo');
-            }
-            
-            const uniqueTextSearchFields = [...new Set(textSearchFields)];
-
-            uniqueTextSearchFields.forEach(field => {
-                keywordOrConditions.push({ [field]: regex });
-            });
-        });
-    }
-
-    if(keywordOrConditions.length > 0) {
-        finalConditions.push({ $or: keywordOrConditions });
-    }
-
-    // 2. Year search logic
-    if (year) {
-        const yearShort = year.toString().slice(-2); // e.g., 23
-        const yearLong = year.toString(); // e.g., 2023
-
-        const yearOrConditions: any[] = [
-            { fecha_expedicion: { $regex: `^${yearLong}`, $options: 'i' } }
-        ];
-
-        const documentTypesForYearQuery = documentType === 'all' ? ['circular'] : (documentType === 'circular' ? ['circular'] : []);
-        if (documentTypesForYearQuery.includes('circular')) {
-             yearOrConditions.push({ 
-                $and: [
-                    { tipo_normativa: { $regex: "CIRCULAR", $options: 'i' } },
-                    { numero: { $regex: `/${yearShort}$`, $options: 'i' } }
-                ]
-            });
-        }
-        
-        finalConditions.push({ $or: yearOrConditions });
-    }
-    
-    // Combine all "AND" conditions
-    if (finalConditions.length === 0) return {};
-    
-    if (finalConditions.length === 1) return finalConditions[0];
-    if (finalConditions.length > 1) return { $and: finalConditions };
-    return {};
-};
-
 
 // Define the flow
 const searchDocumentsFlow = ai.defineFlow(
@@ -223,151 +142,59 @@ const searchDocumentsFlow = ai.defineFlow(
     inputSchema: SearchDocumentsInputSchema,
     outputSchema: SearchDocumentsOutputSchema,
   },
-  async input => {
-    // 1. Determine user intent and document type
+  async (input) => {
+    // If context is provided, it means we have DB results and can generate the final answer.
+    if (input.context) {
+        const intentAnalysis = input.intentAnalysis!;
+        const context = input.context;
+        const dbResults = input.dbResults || [];
+
+        if (dbResults.length === 0) {
+            return {
+                results: [],
+                answer: "No se encontraron documentos que coincidan con su búsqueda.",
+            };
+        }
+
+        const { output } = await generateAnswerPrompt({
+            query: input.query,
+            documentType: intentAnalysis.documentType || 'all',
+            context: context,
+            intent: intentAnalysis.intent,
+            resultsCount: dbResults.length,
+        });
+
+        return {
+            results: dbResults,
+            answer: output?.answer || "No pude generar una respuesta basada en los documentos proporcionados.",
+        };
+    }
+
+    // First call: Analyze intent and tell the caller to fetch context.
     const { output: intentOutput } = await extractIntentPrompt({ query: input.query });
+    
     if (!intentOutput) {
         return {
-            results: [],
             answer: "No pude determinar la intención de su consulta. Por favor, intente reformularla.",
         };
     }
     
-    const { intent, documentType = 'all', keywords, year, instructivoType } = intentOutput;
+    const { intent, keywords } = intentOutput;
 
-    if (intent === 'unknown' || (intent !== 'search_latest' && (!keywords || keywords.length === 0) && !year)) {
-      if (input.query.toLowerCase().includes('hola')) {
-         return { results: [], answer: "¡Hola! Soy Digitalius, tu asistente de IA para la búsqueda de documentos. ¿En qué puedo ayudarte hoy?" };
-      }
-      return {
-        results: [],
-        answer: "No estoy seguro de cómo ayudar con eso. Por favor, intente una consulta diferente o más específica.",
-      };
-    }
-    
-    const db: Db = await getDb();
-      
-      let context = "";
-      let results: any[] = [];
-      let finalAnswerDocumentType = documentType;
-
-      if (intent === 'search_latest') {
-          if (documentType === 'instruction') {
-            const collection = db.collection(collectionMap.instruction);
-            
-            const getNumber = (title: string) => {
-                const match = title.match(/^[IE](\d+)/);
-                return match ? parseInt(match[1], 10) : 0;
-            };
-
-            const findLatest = async (type: 'I' | 'E') => {
-                const instructivos = await collection.find({ titulo: { $regex: `^${type}` } }).toArray();
-                if (instructivos.length === 0) return null;
-
-                instructivos.sort((a, b) => getNumber(b.titulo || '') - getNumber(a.titulo || ''));
-                return instructivos[0];
-            };
-
-            if (instructivoType === 'interno') {
-                const latest = await findLatest('I');
-                if (latest) results.push(latest);
-            } else if (instructivoType === 'externo') {
-                const latest = await findLatest('E');
-                if (latest) results.push(latest);
-            } else { // 'ambos' or undefined
-                const latestI = await findLatest('I');
-                const latestE = await findLatest('E');
-                if (latestI) results.push(latestI);
-                if (latestE) results.push(latestE);
-            }
-
-            finalAnswerDocumentType = 'instruction';
-          } else if (documentType === 'circular') {
-            const collection = db.collection(collectionMap.circular);
-            const latestCirculares = await collection.find({})
-              .sort({ fecha_expedicion: -1 })
-              .limit(5)
-              .toArray();
-            results = latestCirculares;
-            finalAnswerDocumentType = 'circular';
-          }
-      } else {
-        const collectionsToQuery = documentType === 'all'
-          ? Object.values(collectionMap)
-          : [collectionMap[documentType as 'circular' | 'instruction' | 'regulation']];
-        
-        for (const collectionName of collectionsToQuery) {
-            const collection = db.collection(collectionName);
-            const docTypeForQuery = Object.keys(collectionMap).find(key => collectionMap[key as 'circular' | 'instruction' | 'regulation'] === collectionName) as 'circular' | 'instruction' | 'regulation';
-            
-            // Build query only for the specific document type being queried
-            const query = buildSearchQuery(keywords || [], docTypeForQuery, year);
-            
-            const collectionResults = await collection.find(query).toArray();
-            results = results.concat(collectionResults);
+    if (intent === 'unknown' || (intent !== 'search_latest' && (!keywords || keywords.length === 0) && !intentOutput.year)) {
+        if (input.query.toLowerCase().includes('hola')) {
+            return { results: [], answer: "¡Hola! Soy Digitalius, tu asistente de IA para la búsqueda de documentos. ¿En qué puedo ayudarte hoy?" };
         }
-      }
-
-      if (results.length === 0) {
         return {
-          results: [],
-          answer: "No se encontraron documentos que coincidan con su búsqueda.",
+            answer: "No estoy seguro de cómo ayudar con eso. Por favor, intente una consulta diferente o más específica.",
         };
-      }
-      
-      // Remove duplicates based on _id
-      const uniqueResults = results.filter((result, index, self) =>
-        index === self.findIndex((r) => (
-          r._id.toString() === result._id.toString()
-        ))
-      );
+    }
 
-      // Sanitize `palabras_clave` to ensure it's an array
-      uniqueResults.forEach(result => {
-        if (typeof result.palabras_clave === 'string') {
-          result.palabras_clave = result.palabras_clave.split(',').map((s: string) => s.trim());
-        }
-      });
-      
-      context = JSON.stringify(uniqueResults, null, 2);
-
-      // Process results before sending them to the prompt or returning them
-      const processedResults = uniqueResults.map(r => {
-        const result: any = { ...r, _id: r._id.toString() };
-        
-        Object.keys(result).forEach(key => {
-            if (result[key] === null || result[key] === undefined) {
-              delete result[key];
-            } else if (result[key] instanceof Date) {
-              result[key] = result[key].toISOString();
-            }
-        });
-        
-        if (result.articulos && Array.isArray(result.articulos)) {
-          result.articulos = result.articulos.map((articulo: any) => {
-            if (articulo && typeof articulo === 'object' && articulo.numero_articulo) {
-                articulo.numero_articulo = String(articulo.numero_articulo);
-            }
-            return articulo;
-          });
-        }
-        
-        return result;
-      });
-
-      // 4. Generate AI response based on context
-      const { output } = await generateAnswerPrompt({
-        query: input.query,
-        documentType: finalAnswerDocumentType,
-        context: context,
-        intent: intent,
-        resultsCount: processedResults.length,
-      });
-
-      return {
-        results: processedResults,
-        answer: output?.answer || "No pude generar una respuesta basada en los documentos proporcionados.",
-      };
-    
+    // Signal to the server action that it needs to fetch context
+    return {
+        answer: '', // No answer yet
+        requiresContext: true,
+        intentAnalysis: intentOutput,
+    };
   }
 );
