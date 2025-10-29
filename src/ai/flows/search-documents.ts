@@ -84,7 +84,7 @@ const extractIntentPrompt = ai.definePrompt({
 The document types can be 'circular', 'instruction', or 'regulation'. If no specific type is mentioned, classify it as 'all'.
 If the user is asking a question to find information, the intent is 'search_info'. Extract the most relevant keywords.
 If the user is asking to count something (e.g., "how many articles", "cuántos instructivos"), the intent is 'count_items'. Also extract keywords if the count is conditioned (e.g., "cuántas circulares sobre superintendencia").
-If the user is asking for the "latest" or "newest" document (e.g., "cuál es el último instructivo", "el instructivo más reciente"), the intent is 'search_latest' and the documentType should be 'instruction'. For this intent, also determine if they are asking for "interno", "externo" or both (if not specified, it's "ambos").
+If the user is asking for the "latest" or "newest" document (e.g., "cuál es el último instructivo", "la circular más reciente"), the intent is 'search_latest'. Determine the documentType ('instruction' or 'circular'). For 'instruction' intent, also determine if they are asking for "interno", "externo" or both (if not specified, it's "ambos").
 If a year is mentioned (e.g., "del año 2023", "en 2022"), extract it into the 'year' field.
 If the user is asking for a specific circular by its number (e.g., "circular 06/20"), extract the number "06/20" as a keyword.
 If the intent is not clear, classify it as 'unknown'.
@@ -209,16 +209,6 @@ const buildSearchQuery = (keywords: string[], documentType: 'circular' | 'instru
     
     // Combine all "AND" conditions
     if (finalConditions.length === 0) return {};
-    // Use $or for keywords and $and for year and other filters.
-    if (keywordOrConditions.length > 0 && finalConditions.length > 1) {
-        // If we have keywords and other conditions, wrap keywords in an $or and combine with other conditions using $and
-        return {
-            $and: [
-                { $or: keywordOrConditions },
-                ...finalConditions.slice(1)
-            ]
-        };
-    }
     
     if (finalConditions.length === 1) return finalConditions[0];
     if (finalConditions.length > 1) return { $and: finalConditions };
@@ -261,36 +251,46 @@ const searchDocumentsFlow = ai.defineFlow(
       let results: any[] = [];
       let finalAnswerDocumentType = documentType;
 
-      if (intent === 'search_latest' && documentType === 'instruction') {
-        const collection = db.collection(collectionMap.instruction);
-        
-        const getNumber = (title: string) => {
-            const match = title.match(/^[IE](\d+)/);
-            return match ? parseInt(match[1], 10) : 0;
-        };
+      if (intent === 'search_latest') {
+          if (documentType === 'instruction') {
+            const collection = db.collection(collectionMap.instruction);
+            
+            const getNumber = (title: string) => {
+                const match = title.match(/^[IE](\d+)/);
+                return match ? parseInt(match[1], 10) : 0;
+            };
 
-        const findLatest = async (type: 'I' | 'E') => {
-            const instructivos = await collection.find({ titulo: { $regex: `^${type}` } }).toArray();
-            if (instructivos.length === 0) return null;
+            const findLatest = async (type: 'I' | 'E') => {
+                const instructivos = await collection.find({ titulo: { $regex: `^${type}` } }).toArray();
+                if (instructivos.length === 0) return null;
 
-            instructivos.sort((a, b) => getNumber(b.titulo || '') - getNumber(a.titulo || ''));
-            return instructivos[0];
-        };
+                instructivos.sort((a, b) => getNumber(b.titulo || '') - getNumber(a.titulo || ''));
+                return instructivos[0];
+            };
 
-        if (instructivoType === 'interno') {
-            const latest = await findLatest('I');
-            if (latest) results.push(latest);
-        } else if (instructivoType === 'externo') {
-            const latest = await findLatest('E');
-            if (latest) results.push(latest);
-        } else { // 'ambos' or undefined
-            const latestI = await findLatest('I');
-            const latestE = await findLatest('E');
-            if (latestI) results.push(latestI);
-            if (latestE) results.push(latestE);
-        }
+            if (instructivoType === 'interno') {
+                const latest = await findLatest('I');
+                if (latest) results.push(latest);
+            } else if (instructivoType === 'externo') {
+                const latest = await findLatest('E');
+                if (latest) results.push(latest);
+            } else { // 'ambos' or undefined
+                const latestI = await findLatest('I');
+                const latestE = await findLatest('E');
+                if (latestI) results.push(latestI);
+                if (latestE) results.push(latestE);
+            }
 
-        finalAnswerDocumentType = 'instruction';
+            finalAnswerDocumentType = 'instruction';
+          } else if (documentType === 'circular') {
+            const collection = db.collection(collectionMap.circular);
+            const latestCirculares = await collection.find({})
+              .sort({ fecha_expedicion: -1 })
+              .limit(5)
+              .toArray();
+            results = latestCirculares;
+            finalAnswerDocumentType = 'circular';
+          }
       } else {
         const collectionsToQuery = documentType === 'all'
           ? Object.values(collectionMap)
