@@ -202,6 +202,11 @@ export async function handleSearch(
                 return articulo;
               });
             }
+            // FIX: Ensure 'palabras_clave' is an array of strings.
+            if (result.palabras_clave && typeof result.palabras_clave === 'string') {
+              result.palabras_clave = result.palabras_clave.split(',').map((kw: string) => kw.trim());
+            }
+
             return result;
         });
 
