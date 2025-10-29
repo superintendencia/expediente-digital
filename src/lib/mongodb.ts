@@ -5,19 +5,19 @@ const MONGODB_DATABASE_NAME = process.env.MONGODB_DATABASE_NAME;
 
 if (!MONGODB_URI) {
   throw new Error(
-    'Please define the MONGODB_URI environment variable inside .env'
+    'Please define the MONGODB_URI environment variable inside .env or in your deployment settings.'
   );
 }
 
 if (!MONGODB_DATABASE_NAME) {
   throw new Error(
-    'Please define the MONGODB_DATABASE_NAME environment variable inside .env'
+    'Please define the MONGODB_DATABASE_NAME environment variable inside .env or in your deployment settings.'
   );
 }
 
 // Extend the global type to include our MongoDB connection cache
 declare global {
-  var _mongoClientPromise: Promise<MongoClient> | undefined;
+  var _mongoClientPromise: Promise<MongoClient>;
 }
 
 let client: MongoClient;
